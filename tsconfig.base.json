@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    // Base configuration for all packages
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+
+    // Modern Module Resolution
+    "moduleResolution": "bundler",
+
+    // Shared Linting Rules
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
