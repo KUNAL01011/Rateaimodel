@@ -1,0 +1,57 @@
+import mongoose, { Document, Schema } from "mongoose";
+
+export type UserRole = "user" | "owner" | "admin";
+
+export interface IUser extends Document {
+  email: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+  bio?: string;
+  role: UserRole;
+  emailVerified: boolean;
+
+  googleId?: string;
+
+  reviewCount: number;
+  helpfulVoteCount: number;
+  isApiUser: boolean;
+
+  refreshTokenHash?: string;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const UserSchema = new Schema<IUser>(
+  {
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    username: { type: String, required: true, unique: true, index: true },
+    displayName: { type: String },
+    avatarUrl: { type: String },
+    bio: { type: String },
+    role: {
+      type: String,
+      enum: ["user", "owner", "admin"],
+      default: "user",
+    },
+    // Google OAuth
+    googleId: { type: String, unique: true, sparse: true },
+
+    // Trust signals
+    reviewCount: { type: Number, default: 0 },
+    helpfulVoteCount: { type: Number, default: 0 },
+    isApiUser: { type: Boolean, default: false },
+    refreshTokenHash: { type: String },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export const User = mongoose.model<IUser>("User", UserSchema);

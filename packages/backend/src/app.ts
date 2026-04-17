@@ -1,27 +1,29 @@
-import express, {Application, Request, Response} from "express";
+import express, { Application, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
-import {morganMiddleware} from "./utils";
-import {errorHandler, globalLimiter, notFoundHandler} from "./middlewares";
-import routes from "./routes";
+import { morganMiddleware } from "./utils";
+import { errorHandler, globalLimiter, notFoundHandler } from "./middlewares";
+import routes from "./routes/v1";
 
-const app:Application = express();
+const app: Application = express();
 
 app.use(helmet());
-app.use(cors({
-  origin:["https://localhost:3000"],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-}))
+app.use(
+  cors({
+    origin: ["https://localhost:3000"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 app.use(globalLimiter);
 app.disable("x-powered-by");
 
-app.use(express.json({limit: "20kb"}));
-app.use(express.urlencoded({extended: true, limit: "20kb"}));
+app.use(express.json({ limit: "20kb" }));
+app.use(express.urlencoded({ extended: true, limit: "20kb" }));
 app.use(cookieParser());
 
 app.use(compression());
@@ -29,12 +31,12 @@ app.use(morganMiddleware);
 
 app.use(express.static("public"));
 
-app.get("/health", (_req: Request, res:Response) => {
+app.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({
     status: "OK",
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  })
+    uptime: process.uptime(),
+  });
 });
 
 app.use("/api", routes);

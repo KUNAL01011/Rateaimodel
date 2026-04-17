@@ -13,6 +13,8 @@ const _environment = {
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
+  ACCESS_SECRET: process.env.ACCESS_SECRET,
+  REFRESH_SECRET: process.env.REFRESH_SECRET,
 }
 
 const requiredEnvVars = [
@@ -27,6 +29,8 @@ const requiredEnvVars = [
   "FIREBASE_PRIVATE_KEY",
   "FIREBASE_CLIENT_EMAIL",
   "FIREBASE_PRIVATE_KEY",
+  "ACCESS_SECRET",
+  "REFRESH_SECRET",
 ] as const;
 
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
