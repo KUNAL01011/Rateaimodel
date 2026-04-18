@@ -11,3 +11,5 @@ export { ownershipService } from "./ownership.service";
 export { analyticsService } from "./analytics.service";
 
 export { authService } from "./auth.service";
+
+export { userService } from "./user.service";

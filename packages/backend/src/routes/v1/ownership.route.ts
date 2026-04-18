@@ -14,7 +14,7 @@ import {
   submitClaimSchema,
   submitNewToolListingSchema,
   reviewClaimSchema,
-} from "@/validators/ownership.validator";
+} from "@/validators";
 
 const router = Router();
 

@@ -16,7 +16,7 @@ import {
   updateToolSchema,
   toolQuerySchema,
   addBenchmarkSchema,
-} from "@/validators/tool.validator";
+} from "@/validators";
 
 const router = Router();
 

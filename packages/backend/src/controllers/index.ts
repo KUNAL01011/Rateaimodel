@@ -5,3 +5,4 @@ export {getReviews, getReview, createReview, updateReview, deleteReview, voteRev
 export {recommend,recordRecommendClick,getUseCases} from "./recommendation.controller";
 export {submitClaim,submitNewListing,checkDnsVerification,getMyClaims,getMyOwnedTools,getAllClaims,reviewClaim,revokeOwnership} from "./ownership.controller";
 export {getMyToolAnalytics,getToolAnalyticsAdmin} from "./analytics.controller";
+export {getAllUsers,getPlatformStats, getUserById, changeUserRole, deleteUserAdmin, getProfile,updateProfile,deleteAccount,getPublicProfile,getUserReviews} from "./user.controller"

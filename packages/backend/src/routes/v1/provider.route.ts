@@ -5,9 +5,9 @@ import {
   createProvider,
   updateProvider,
   deleteProvider,
-} from "@/controllers/provider.controller";
+} from "@/controllers";
 import { validate, authenticate, authorize } from "@/middlewares";
-import { createProviderSchema, updateProviderSchema, providerQuerySchema } from "@/validators/provider.validator";
+import { createProviderSchema, updateProviderSchema, providerQuerySchema } from "@/validators";
 
 const router = Router();
 

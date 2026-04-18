@@ -3,9 +3,9 @@ import {
   recommend,
   recordRecommendClick,
   getUseCases,
-} from "@/controllers/recommendation.controller";
+} from "@/controllers";
 import { validate } from "@/middlewares";
-import { recommendSchema } from "@/validators/recommendation.validator";
+import { recommendSchema } from "@/validators";
 
 const router = Router();
 

@@ -18,7 +18,7 @@ import {
   reviewQuerySchema,
   voteReviewSchema,
   ownerResponseSchema,
-} from "@/validators/review.validator";
+} from "@/validators";
 
 const router = Router();
 
