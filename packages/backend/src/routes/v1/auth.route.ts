@@ -1,15 +1,11 @@
-import { getMe, googleLogin, logout, refresh } from "@/controllers";
-import { authenticate, validate } from "@/middlewares";
-import { googleLoginSchema } from "@/validators";
+import { getMe, googleLogin, logout } from "@/controllers";
+import { authenticate } from "@/middlewares";
 import { Router } from "express";
 
 const router = Router();
 
 // POST /v1/auth/google   — exchange Firebase ID token for our JWT pair
-router.post("/google", validate(googleLoginSchema), googleLogin);
-
-// POST /v1/auth/refresh  — rotate refresh token (reads httpOnly cookie)
-router.post("/refresh", refresh);
+router.post("/google", googleLogin);
 
 // POST /v1/auth/logout   — clear refresh token (auth required)
 router.post("/logout", authenticate, logout);
