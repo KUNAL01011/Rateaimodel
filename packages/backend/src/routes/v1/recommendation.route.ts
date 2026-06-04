@@ -1,6 +1,5 @@
 import { recommend, getUseCases } from "@/controllers";
-import { authenticate } from "@/middlewares";
-import { validate } from "@/middlewares";
+import { authenticate, validate } from "@/middlewares";
 import { recommendSchema } from "@/validators";
 import { Router } from "express";
 

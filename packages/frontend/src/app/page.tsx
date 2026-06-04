@@ -1,5 +1,5 @@
 "use client";
-import { useFeaturedTools, useTrendingTools } from "@/lib/hooks";
+import { useFeaturedTools, useTrendingTools, useCategories } from "@/lib/hooks";
 import HeroSearch from "@/components/search/HeroSearch";
 import ToolCard from "@/components/tools/ToolCard";
 import Link from "next/link";
@@ -11,8 +11,8 @@ import {
   Shield,
   Zap,
   BarChart3,
+  AlertCircle,
 } from "lucide-react";
-import { MOCK_CATEGORIES } from "@/lib/mockData";
 
 const STATS = [
   { value: "2,400+", label: "AI Tools Indexed" },
@@ -32,15 +32,59 @@ const CATEGORY_ICONS: Record<string, string> = {
   "Data & Analytics": "📊",
 };
 
+function GridSkeleton({
+  count = 3,
+  height = "h-64",
+}: {
+  count?: number;
+  height?: string;
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className={`card ${height} shimmer`} />
+      ))}
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-5 py-4 rounded-xl"
+      style={{
+        background: "rgba(244,63,94,0.08)",
+        border: "1px solid rgba(244,63,94,0.2)",
+      }}
+    >
+      <AlertCircle
+        size={16}
+        style={{ color: "var(--accent-red)", flexShrink: 0 }}
+      />
+      <p className="text-sm" style={{ color: "var(--accent-red)" }}>
+        {message}
+      </p>
+    </div>
+  );
+}
+
 export default function HomePage() {
-  const { tools: featured, loading: fLoading } = useFeaturedTools();
-  const { tools: trending, loading: tLoading } = useTrendingTools();
+  const {
+    tools: featured,
+    loading: fLoading,
+    error: fError,
+  } = useFeaturedTools(6);
+  const {
+    tools: trending,
+    loading: tLoading,
+    error: tError,
+  } = useTrendingTools(6);
+  const { categories, loading: cLoading, error: cError } = useCategories();
 
   return (
     <div style={{ position: "relative", zIndex: 1 }}>
-      {/* Hero */}
+      {/* ── Hero ── */}
       <section className="relative px-6 pt-20 pb-24 overflow-hidden">
-        {/* Ambient glow */}
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[400px] pointer-events-none"
           style={{
@@ -49,7 +93,6 @@ export default function HomePage() {
             filter: "blur(40px)",
           }}
         />
-
         <div className="max-w-4xl mx-auto text-center relative">
           <div
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full mb-8 text-xs font-medium animate-fade-up"
@@ -85,7 +128,6 @@ export default function HomePage() {
             <HeroSearch />
           </div>
 
-          {/* Stats bar */}
           <div
             className="flex flex-wrap justify-center gap-8 mt-16 animate-fade-up"
             style={{ animationDelay: "0.4s", opacity: 0 }}
@@ -110,7 +152,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Why RateAI */}
+      {/* ── Why RateAI ── */}
       <section
         className="px-6 py-20"
         style={{ background: "var(--bg-raised)" }}
@@ -180,7 +222,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Featured Tools */}
+      {/* ── Featured Tools ── */}
       <section className="px-6 py-20">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-8">
@@ -208,13 +250,18 @@ export default function HomePage() {
               View All <ArrowRight size={14} />
             </Link>
           </div>
-          {fLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="card p-6 h-64 shimmer" />
-              ))}
-            </div>
-          ) : (
+
+          {fLoading && <GridSkeleton count={3} height="h-64" />}
+          {!fLoading && fError && <ErrorBanner message={fError} />}
+          {!fLoading && !fError && featured.length === 0 && (
+            <p
+              className="text-sm py-8 text-center"
+              style={{ color: "var(--text-muted)" }}
+            >
+              No featured tools yet.
+            </p>
+          )}
+          {!fLoading && !fError && featured.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featured.map((tool, i) => (
                 <ToolCard
@@ -229,7 +276,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Categories */}
+      {/* ── Categories ── */}
       <section
         className="px-6 py-20"
         style={{ background: "var(--bg-raised)" }}
@@ -249,35 +296,49 @@ export default function HomePage() {
               All Categories <ArrowRight size={14} />
             </Link>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {MOCK_CATEGORIES.map(cat => (
-              <Link
-                key={cat.id}
-                href={`/categories/${cat.slug}`}
-                className="card p-5 flex flex-col gap-3 group"
-                style={{ textDecoration: "none" }}
-              >
-                <span className="text-3xl">
-                  {CATEGORY_ICONS[cat.name] || "🔮"}
-                </span>
-                <div>
-                  <p
-                    className="font-semibold text-sm mb-0.5"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {cat.name}
-                  </p>
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    {cat.count} tools
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
+
+          {cLoading && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="card h-32 shimmer" />
+              ))}
+            </div>
+          )}
+          {!cLoading && cError && <ErrorBanner message={cError} />}
+          {!cLoading && !cError && categories.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {categories.slice(0, 8).map(cat => (
+                <Link
+                  key={cat.id}
+                  href={`/categories/${cat.slug}`}
+                  className="card p-5 flex flex-col gap-3 group"
+                  style={{ textDecoration: "none" }}
+                >
+                  <span className="text-3xl">
+                    {CATEGORY_ICONS[cat.name] ?? "🔮"}
+                  </span>
+                  <div>
+                    <p
+                      className="font-semibold text-sm mb-0.5"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {cat.name}
+                    </p>
+                    <p
+                      className="text-xs"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {cat.count} tools
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Trending */}
+      {/* ── Trending ── */}
       <section className="px-6 py-20">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-3 mb-8">
@@ -289,15 +350,20 @@ export default function HomePage() {
               Trending This Week
             </h2>
           </div>
-          {tLoading ? (
+
+          {tLoading && <GridSkeleton count={3} height="h-48" />}
+          {!tLoading && tError && <ErrorBanner message={tError} />}
+          {!tLoading && !tError && trending.length === 0 && (
+            <p
+              className="text-sm py-8 text-center"
+              style={{ color: "var(--text-muted)" }}
+            >
+              No trending tools right now.
+            </p>
+          )}
+          {!tLoading && !tError && trending.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="card p-6 h-48 shimmer" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {trending.slice(0, 6).map(tool => (
+              {trending.map(tool => (
                 <ToolCard key={tool.id} tool={tool} />
               ))}
             </div>
@@ -305,7 +371,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CTA Banner */}
+      {/* ── CTA ── */}
       <section className="px-6 py-16">
         <div
           className="max-w-3xl mx-auto text-center rounded-3xl p-12 relative overflow-hidden"

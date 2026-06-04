@@ -1,7 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
-import { AITool, SearchFilters, Review } from "./types";
-import { MOCK_TOOLS, MOCK_CATEGORIES, searchTools } from "./mockData";
+import { useState, useEffect, useCallback, useRef, useReducer } from "react";
+import { AITool, SearchFilters, Review, Category } from "./types";
 import {
   authApi,
   toolsApi,
@@ -14,13 +13,55 @@ import {
   BackendCategory,
   BackendReview,
   AuthUser,
+  CreateReviewPayload,
 } from "./api";
 import {
   signInWithGoogle as firebaseSignIn,
   signOutFromFirebase,
 } from "./firebase";
 
-// ── Adapters: backend shape → frontend AITool shape ───────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic async state types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AsyncStatus = "idle" | "loading" | "success" | "error";
+
+export interface AsyncState<T> {
+  data: T;
+  status: AsyncStatus;
+  error: string | null;
+}
+
+type AsyncAction<T> =
+  | { type: "LOADING" }
+  | { type: "SUCCESS"; payload: T }
+  | { type: "ERROR"; payload: string }
+  | { type: "RESET" };
+
+function createAsyncReducer<T>(initialData: T) {
+  return function asyncReducer(
+    state: AsyncState<T>,
+    action: AsyncAction<T>
+  ): AsyncState<T> {
+    switch (action.type) {
+      case "LOADING":
+        return { ...state, status: "loading", error: null };
+      case "SUCCESS":
+        return { data: action.payload, status: "success", error: null };
+      case "ERROR":
+        return { ...state, status: "error", error: action.payload };
+      case "RESET":
+        return { data: initialData, status: "idle", error: null };
+      default:
+        return state;
+    }
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adapters: backend shape → frontend AITool shape
+// ─────────────────────────────────────────────────────────────────────────────
+
 function adaptTool(t: BackendTool): AITool {
   return {
     id: t._id,
@@ -69,7 +110,7 @@ function adaptTool(t: BackendTool): AITool {
     benchmarks:
       t.benchmarks?.map(b => ({
         name: b.benchmarkName,
-        score: String(b.score) + (b.scoreUnit ? b.scoreUnit : ""),
+        score: String(b.score) + (b.scoreUnit ?? ""),
         vsAvg: "",
         positive: true,
       })) ?? [],
@@ -77,6 +118,36 @@ function adaptTool(t: BackendTool): AITool {
     featured: t.isFeatured,
     verified: false,
     website: t.websiteUrl ?? "#",
+    usersCount: "",
+  };
+}
+
+function adaptReview(r: BackendReview): Review {
+  const user = r.userId as any;
+  const displayName = user?.displayName ?? user?.username ?? "Anonymous";
+  return {
+    id: r._id,
+    userId: user?._id ?? "",
+    userName: displayName,
+    userInitials: displayName.slice(0, 2).toUpperCase(),
+    rating: r.ratingOverall,
+    title: r.reviewText.slice(0, 80),
+    body: r.reviewText,
+    pros: r.pros
+      ? r.pros
+          .split(";")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [],
+    cons: r.cons
+      ? r.cons
+          .split(";")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : [],
+    useCase: r.useCase,
+    date: new Date(r.createdAt).toLocaleDateString(),
+    helpful: r.upvotes,
   };
 }
 
@@ -110,187 +181,478 @@ function mapPricingType(t: string): any {
   return map[t] ?? "Freemium";
 }
 
-// ── Tools ───────────────────────────────────────────────────────────────
-export function useTools() {
-  const [tools, setTools] = useState<AITool[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth context (singleton across the app)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+  role: string;
+}
+
+type AuthState = AsyncState<AuthUser | null>;
+
+const authReducer = createAsyncReducer<AuthUser | null>(null);
+
+// Module-level so all useAuth() consumers share state without a context provider
+let _authState: AuthState = { data: null, status: "idle", error: null };
+const _authListeners = new Set<() => void>();
+
+function setAuthState(state: AuthState) {
+  _authState = state;
+  _authListeners.forEach(fn => fn());
+}
+
+export function useAuth() {
+  const [, rerender] = useReducer(x => x + 1, 0);
 
   useEffect(() => {
-    toolsApi
-      .getAll({ limit: 50 })
-      .then(res => setTools(res.data.map(adaptTool)))
-      .catch(() => setTools(MOCK_TOOLS))
-      .finally(() => setLoading(false));
+    _authListeners.add(rerender);
+    return () => {
+      _authListeners.delete(rerender);
+    };
   }, []);
 
-  return { tools, loading, error };
+  // Hydrate on first mount across all consumers
+  useEffect(() => {
+    if (_authState.status !== "idle") return;
+    setAuthState({ ..._authState, status: "loading" });
+    authApi
+      .me()
+      .then(u =>
+        setAuthState({
+          data: {
+            id: u.id,
+            name: u.displayName ?? u.username,
+            email: u.email,
+            avatar: u.avatarUrl ?? "",
+            role: u.role,
+          },
+          status: "success",
+          error: null,
+        })
+      )
+      .catch(() =>
+        setAuthState({ data: null, status: "success", error: null })
+      );
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    setAuthState({ ..._authState, status: "loading", error: null });
+    try {
+      const idToken = await firebaseSignIn();
+      const res = await authApi.googleLogin(idToken);
+      setAuthState({
+        data: {
+          id: res.user.id,
+          name: res.user.displayName ?? res.user.username,
+          email: res.user.email,
+          avatar: res.user.avatarUrl ?? "",
+          role: res.user.role,
+        },
+        status: "success",
+        error: null,
+      });
+    } catch (err: any) {
+      setAuthState({
+        ..._authState,
+        status: "error",
+        error: err?.message ?? "Sign-in failed",
+      });
+      throw err;
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await Promise.allSettled([authApi.logout(), signOutFromFirebase()]);
+    setAuthState({ data: null, status: "success", error: null });
+  }, []);
+
+  return {
+    user: _authState.data,
+    loading: _authState.status === "loading",
+    error: _authState.error,
+    signInWithGoogle,
+    signOut,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tools
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useTools(params?: Record<string, string | number | undefined>) {
+  const [state, dispatch] = useReducer(createAsyncReducer<AITool[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
+    toolsApi
+      .getAll({ limit: 50, ...params })
+      .then(res => {
+        if (!cancelled)
+          dispatch({ type: "SUCCESS", payload: res.data.map(adaptTool) });
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load tools",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return {
+    tools: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+  };
 }
 
 export function useTool(slug: string) {
-  const [tool, setTool] = useState<AITool | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(
+    createAsyncReducer<AITool | null>(null),
+    {
+      data: null,
+      status: "idle",
+      error: null,
+    }
+  );
 
   useEffect(() => {
     if (!slug) return;
-    setLoading(true);
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
     toolsApi
       .getBySlug(slug)
-      .then(t => setTool(adaptTool(t)))
-      .catch(() => {
-        const found = MOCK_TOOLS.find(t => t.slug === slug);
-        if (found) setTool(found);
-        else setError("Tool not found");
+      .then(t => {
+        if (!cancelled) dispatch({ type: "SUCCESS", payload: adaptTool(t) });
       })
-      .finally(() => setLoading(false));
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Tool not found",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
-  return { tool, loading, error };
+  return {
+    tool: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+  };
 }
 
-export function useFeaturedTools() {
-  const [tools, setTools] = useState<AITool[]>([]);
-  const [loading, setLoading] = useState(true);
+export function useFeaturedTools(limit = 6) {
+  const [state, dispatch] = useReducer(createAsyncReducer<AITool[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
 
   useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
     toolsApi
-      .getFeatured()
-      .then(data => setTools(data.map(adaptTool)))
-      .catch(() => setTools(MOCK_TOOLS.filter(t => t.featured)))
-      .finally(() => setLoading(false));
-  }, []);
+      .getFeatured(limit)
+      .then(data => {
+        if (!cancelled)
+          dispatch({ type: "SUCCESS", payload: data.map(adaptTool) });
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load featured tools",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [limit]);
 
-  return { tools, loading };
+  return {
+    tools: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+  };
 }
 
-export function useTrendingTools() {
-  const [tools, setTools] = useState<AITool[]>([]);
-  const [loading, setLoading] = useState(true);
+export function useTrendingTools(limit = 6) {
+  const [state, dispatch] = useReducer(createAsyncReducer<AITool[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
 
   useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
     toolsApi
-      .getTrending()
-      .then(data => setTools(data.map(adaptTool)))
-      .catch(() => setTools(MOCK_TOOLS.filter(t => t.trending)))
-      .finally(() => setLoading(false));
-  }, []);
+      .getTrending(limit)
+      .then(data => {
+        if (!cancelled)
+          dispatch({ type: "SUCCESS", payload: data.map(adaptTool) });
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load trending tools",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [limit]);
 
-  return { tools, loading };
+  return {
+    tools: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+  };
 }
 
-// ── Search ────────────────────────────────────────────────────────────
+export function useSimilarTools(slug: string, limit = 5) {
+  const [state, dispatch] = useReducer(createAsyncReducer<AITool[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
+    toolsApi
+      .getSimilar(slug, limit)
+      .then(data => {
+        if (!cancelled)
+          dispatch({ type: "SUCCESS", payload: data.map(adaptTool) });
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load similar tools",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, limit]);
+
+  return {
+    tools: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Search
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function useSearch(initialQuery = "") {
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState<AITool[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState<Partial<SearchFilters>>({});
+  const [state, dispatch] = useReducer(createAsyncReducer<AITool[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
+  const [appliedFilters, setAppliedFilters] = useState<Partial<SearchFilters>>(
+    {}
+  );
+  const abortRef = useRef<AbortController | null>(null);
 
-  const search = useCallback((q: string, f?: Partial<SearchFilters>) => {
-    setQuery(q);
-    if (f) setFilters(f);
-    setLoading(true);
+  const search = useCallback(
+    (q: string, filters?: Partial<SearchFilters>, page = 1, limit = 20) => {
+      setQuery(q);
+      if (filters) setAppliedFilters(filters);
 
-    if (!q.trim()) {
-      setResults([]);
-      setLoading(false);
-      return;
-    }
+      if (!q.trim()) {
+        dispatch({ type: "SUCCESS", payload: [] });
+        return;
+      }
 
-    searchApi
-      .search(q)
-      .then(res => {
-        let list = res.data.map(adaptTool);
-        // Apply client-side filters on top
-        if (f?.types?.length)
-          list = list.filter(t => f.types!.includes(t.type));
-        if (f?.hasApi != null) list = list.filter(t => t.hasApi === f.hasApi);
-        if (f?.isOpenSource != null)
-          list = list.filter(t => t.isOpenSource === f.isOpenSource);
-        setResults(list);
-      })
-      .catch(() => {
-        let fallback = q ? searchTools(q) : MOCK_TOOLS;
-        if (f?.types?.length)
-          fallback = fallback.filter(t => f.types!.includes(t.type));
-        setResults(fallback);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+      // Cancel in-flight request
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
 
-  return { query, results, loading, filters, setFilters, search };
+      dispatch({ type: "LOADING" });
+      searchApi
+        .search(q, page, limit)
+        .then(res => {
+          let list = res.data.map(adaptTool);
+
+          // Client-side filter pass
+          const f = filters ?? appliedFilters;
+          if (f.types?.length)
+            list = list.filter(t => f.types!.includes(t.type));
+          if (f.pricing?.length)
+            list = list.filter(t => f.pricing!.includes(t.pricing));
+          if (f.hasApi != null) list = list.filter(t => t.hasApi === f.hasApi);
+          if (f.isOpenSource != null)
+            list = list.filter(t => t.isOpenSource === f.isOpenSource);
+          if (f.minRating != null)
+            list = list.filter(t => t.rating >= (f.minRating ?? 0));
+
+          dispatch({ type: "SUCCESS", payload: list });
+        })
+        .catch((err: any) => {
+          if (err?.name === "AbortError") return;
+          dispatch({ type: "ERROR", payload: err?.message ?? "Search failed" });
+        });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // Cleanup on unmount
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  return {
+    query,
+    results: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+    filters: appliedFilters,
+    setFilters: setAppliedFilters,
+    search,
+  };
 }
 
-// ── Categories ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Categories
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function useCategories() {
-  const [categories, setCategories] = useState(MOCK_CATEGORIES);
-  const [loading, setLoading] = useState(true);
+  const [state, dispatch] = useReducer(createAsyncReducer<Category[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
 
   useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
     categoriesApi
       .getAll()
       .then(data => {
-        // Map to frontend Category shape
-        const mapped = data.map((c, i) => ({
-          id: c.id,
-          name: c.name,
-          slug: c.slug,
-          description: c.description,
-          icon: c.icon,
-          count: c.count,
-          featured: [],
-        }));
-        setCategories(mapped as any);
+        if (!cancelled) {
+          const mapped: Category[] = data.map(c => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            description: c.description,
+            icon: c.icon,
+            count: c.count,
+            featured: [],
+          }));
+          dispatch({ type: "SUCCESS", payload: mapped });
+        }
       })
-      .catch(() => {
-        /* keep MOCK_CATEGORIES */
-      })
-      .finally(() => setLoading(false));
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load categories",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  return { categories, loading };
+  return {
+    categories: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+  };
 }
 
-// ── Reviews ──────────────────────────────────────────────────────────
-export function useReviews(toolId: string) {
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
+// ─────────────────────────────────────────────────────────────────────────────
+// Reviews
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useReviews(toolId: string, page = 1, limit = 20) {
+  const [state, dispatch] = useReducer(createAsyncReducer<Review[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     if (!toolId) return;
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
     reviewsApi
-      .getByTool(toolId)
+      .getByTool(toolId, { page, limit })
       .then(res => {
-        const mapped: Review[] = res.data.map(r => ({
-          id: r._id,
-          userId: (r.userId as any)?._id ?? "",
-          userName:
-            (r.userId as any)?.displayName ??
-            (r.userId as any)?.username ??
-            "User",
-          userInitials: (
-            (r.userId as any)?.displayName ??
-            (r.userId as any)?.username ??
-            "U"
-          )
-            .slice(0, 2)
-            .toUpperCase(),
-          rating: r.ratingOverall,
-          title: r.reviewText.slice(0, 80),
-          body: r.reviewText,
-          pros: r.pros ? [r.pros] : [],
-          cons: r.cons ? [r.cons] : [],
-          useCase: r.useCase,
-          date: new Date(r.createdAt).toLocaleDateString(),
-          helpful: r.upvotes,
-        }));
-        setReviews(mapped);
+        if (!cancelled) {
+          dispatch({ type: "SUCCESS", payload: res.data.map(adaptReview) });
+          setTotalPages(res.meta.totalPages);
+        }
       })
-      .catch(() => setReviews([]))
-      .finally(() => setLoading(false));
-  }, [toolId]);
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load reviews",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toolId, page, limit]);
 
-  return { reviews, loading };
+  return {
+    reviews: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    totalPages,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Submit Review
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SubmitReviewInput {
+  toolId: string;
+  rating: number;
+  title: string;
+  body: string;
+  pros: string[];
+  cons: string[];
+  useCase: string;
+  ratingBreakdown: {
+    accuracy: number;
+    speed: number;
+    costValue: number;
+    easeOfUse: number;
+  };
+  wouldRecommend?: boolean;
 }
 
 export function useSubmitReview() {
@@ -298,25 +660,12 @@ export function useSubmitReview() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const submitReview = async (data: {
-    toolId: string;
-    rating: number;
-    title: string;
-    body: string;
-    pros: string[];
-    cons: string[];
-    useCase: string;
-    ratingBreakdown: {
-      accuracy: number;
-      speed: number;
-      costValue: number;
-      easeOfUse: number;
-    };
-  }) => {
+  const submitReview = useCallback(async (data: SubmitReviewInput) => {
     setLoading(true);
     setError(null);
+    setSuccess(false);
     try {
-      await reviewsApi.create({
+      const payload: CreateReviewPayload = {
         toolId: data.toolId,
         useCase: data.useCase,
         ratingOverall: data.rating,
@@ -325,184 +674,361 @@ export function useSubmitReview() {
         ratingCostValue: data.ratingBreakdown.costValue || undefined,
         ratingEaseOfUse: data.ratingBreakdown.easeOfUse || undefined,
         reviewText: data.body,
-        pros: data.pros.filter(Boolean).join("; "),
-        cons: data.cons.filter(Boolean).join("; "),
-        wouldRecommend: data.rating >= 3,
-      });
+        pros: data.pros.filter(Boolean).join("; ") || undefined,
+        cons: data.cons.filter(Boolean).join("; ") || undefined,
+        wouldRecommend: data.wouldRecommend ?? data.rating >= 3,
+      };
+      await reviewsApi.create(payload);
       setSuccess(true);
     } catch (err: any) {
-      setError(err.message ?? "Failed to submit review");
+      const msg = err?.message ?? "Failed to submit review";
+      setError(msg);
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  return { submitReview, loading, error, success };
+  const reset = useCallback(() => {
+    setLoading(false);
+    setError(null);
+    setSuccess(false);
+  }, []);
+
+  return { submitReview, loading, error, success, reset };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpful vote
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function useHelpfulVote() {
-  const voteHelpful = async (reviewId: string) => {
-    await reviewsApi.vote(reviewId, "up").catch(() => {});
-  };
-  return { voteHelpful };
+  const [votedIds, setVotedIds] = useState<Set<string>>(new Set());
+
+  const voteHelpful = useCallback(
+    async (reviewId: string) => {
+      if (votedIds.has(reviewId)) return; // idempotent guard
+      setVotedIds(prev => new Set(prev).add(reviewId));
+      try {
+        await reviewsApi.vote(reviewId, "up");
+      } catch {
+        // Revert optimistic update on failure
+        setVotedIds(prev => {
+          const next = new Set(prev);
+          next.delete(reviewId);
+          return next;
+        });
+      }
+    },
+    [votedIds]
+  );
+
+  return { voteHelpful, votedIds };
 }
 
-// ── Saved Tools ──────────────────────────────────────────────────────
-export function useSavedTools() {
-  const [saved, setSaved] = useState<string[]>([]);
+// ─────────────────────────────────────────────────────────────────────────────
+// Saved Tools
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Load saved tools for logged-in user
+export function useSavedTools() {
+  const { user } = useAuth();
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Track in-flight toggles to prevent double-click races
+  const pendingRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
+    if (!user) {
+      setSavedIds(new Set());
+      return;
+    }
+    setLoading(true);
     savedApi
       .getAll()
-      .then(tools => setSaved(tools.map((t: any) => t._id ?? t.id)))
-      .catch(() => {
-        /* not logged in or error */
-      });
-  }, []);
-
-  const toggleSave = async (toolId: string) => {
-    try {
-      const res = await savedApi.toggle(toolId);
-      setSaved(prev =>
-        res.saved ? [...prev, toolId] : prev.filter(id => id !== toolId)
-      );
-    } catch {
-      // Optimistic fallback
-      setSaved(prev =>
-        prev.includes(toolId)
-          ? prev.filter(id => id !== toolId)
-          : [...prev, toolId]
-      );
-    }
-  };
-
-  const isSaved = (toolId: string) => saved.includes(toolId);
-
-  return { saved, toggleSave, isSaved };
-}
-
-// ── Auth ─────────────────────────────────────────────────────────────
-export function useAuth() {
-  const [user, setUser] = useState<{
-    id: string;
-    name: string;
-    email: string;
-    avatar: string;
-    role: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // Re-hydrate from cookie/session on mount
-  useEffect(() => {
-    authApi
-      .me()
-      .then(u =>
-        setUser({
-          id: u.id,
-          name: u.displayName ?? u.username,
-          email: u.email,
-          avatar: u.avatarUrl ?? "",
-          role: u.role,
-        })
+      .then(tools => {
+        setSavedIds(new Set(tools.map((t: any) => t._id ?? t.id)));
+      })
+      .catch((err: any) =>
+        setError(err?.message ?? "Failed to load saved tools")
       )
-      .catch(() => {
-        /* Not logged in */
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  const toggleSave = useCallback(
+    async (toolId: string) => {
+      if (!user) return;
+      if (pendingRef.current.has(toolId)) return; // debounce race
+      pendingRef.current.add(toolId);
+
+      // Optimistic update
+      setSavedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(toolId)) next.delete(toolId);
+        else next.add(toolId);
+        return next;
       });
-  }, []);
 
-  const signInWithGoogle = async () => {
-    setLoading(true);
-    try {
-      const idToken = await firebaseSignIn();
-      const res = await authApi.googleLogin(idToken);
-      setUser({
-        id: res.user.id,
-        name: res.user.displayName ?? res.user.username,
-        email: res.user.email,
-        avatar: res.user.avatarUrl ?? "",
-        role: res.user.role,
-      });
-    } catch (err) {
-      console.error("Login failed:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        const res = await savedApi.toggle(toolId);
+        // Reconcile with server truth
+        setSavedIds(prev => {
+          const next = new Set(prev);
+          if (res.saved) next.add(toolId);
+          else next.delete(toolId);
+          return next;
+        });
+      } catch (err: any) {
+        // Revert on failure
+        setSavedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(toolId)) next.delete(toolId);
+          else next.add(toolId);
+          return next;
+        });
+        setError(err?.message ?? "Failed to update saved tools");
+      } finally {
+        pendingRef.current.delete(toolId);
+      }
+    },
+    [user]
+  );
 
-  const signOut = async () => {
-    await Promise.all([
-      authApi.logout().catch(() => {}),
-      signOutFromFirebase().catch(() => {}),
-    ]);
-    setUser(null);
-  };
+  const isSaved = useCallback(
+    (toolId: string) => savedIds.has(toolId),
+    [savedIds]
+  );
 
-  return { user, loading, signInWithGoogle, signOut };
+  return { savedIds, toggleSave, isSaved, loading, error };
 }
 
-// ── List Your Model ──────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// List / Submit a Tool
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function useListTool() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submitTool = async (data: Record<string, unknown>) => {
+  const submitTool = useCallback(async (data: Record<string, unknown>) => {
     setLoading(true);
     setError(null);
+    setSuccess(false);
     try {
       const formData = new FormData();
       Object.entries(data).forEach(([k, v]) => {
-        if (v !== undefined && v !== null) {
-          if (Array.isArray(v)) formData.append(k, v.join(","));
-          else formData.append(k, String(v));
-        }
+        if (v == null) return;
+        if (Array.isArray(v)) formData.append(k, v.join(","));
+        else formData.append(k, String(v));
       });
       const res = await toolsApi.submit(formData);
-      if (res.success === false) throw new Error(res.message);
+      if (res.success === false)
+        throw new Error(res.message ?? "Submission rejected");
       setSuccess(true);
     } catch (err: any) {
-      setError(err.message ?? "Submission failed");
+      const msg = err?.message ?? "Submission failed";
+      setError(msg);
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  return { submitTool, loading, success, error };
+  const reset = useCallback(() => {
+    setLoading(false);
+    setSuccess(false);
+    setError(null);
+  }, []);
+
+  return { submitTool, loading, success, error, reset };
 }
 
-// ── AI Recommendation ────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Recommendation
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RecommendationResult {
+  tool: AITool;
+  score: number;
+  matchReason: string;
+}
+
 export function useAIRecommendation() {
-  const [recommendations, setRecommendations] = useState<AITool[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [state, dispatch] = useReducer(
+    createAsyncReducer<RecommendationResult[]>([]),
+    { data: [], status: "idle", error: null }
+  );
   const [reasoning, setReasoning] = useState("");
 
-  const getRecommendations = async (prompt: string) => {
-    setLoading(true);
-    setRecommendations([]);
-    try {
-      const res = await recommendApi.recommend(prompt, {}, 4);
-      setRecommendations(res.recommendations.map(r => adaptTool(r.tool)));
-      setReasoning(
-        `Based on your request, I matched tools using ${(res.intent as any)?.task_type ?? "your use case"} intent. Results sorted by community rating and use-case fit.`
-      );
-    } catch {
-      // Fallback to mock
-      const q = prompt.toLowerCase();
-      let recs = MOCK_TOOLS.filter(
-        t =>
-          t.tags.some(tag => q.includes(tag)) ||
-          t.category.toLowerCase().includes(q)
-      ).slice(0, 4);
-      if (!recs.length) recs = MOCK_TOOLS.slice(0, 4);
-      setRecommendations(recs);
-      setReasoning(
-        `Matched tools based on "${prompt}" using keyword analysis.`
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const getRecommendations = useCallback(
+    async (prompt: string, filters?: object, limit = 4) => {
+      if (!prompt.trim()) return;
+      dispatch({ type: "LOADING" });
+      setReasoning("");
+      try {
+        const res = await recommendApi.recommend(prompt, filters, limit);
+        const results: RecommendationResult[] = res.recommendations.map(r => ({
+          tool: adaptTool(r.tool),
+          score: r.score,
+          matchReason: r.matchReason,
+        }));
+        dispatch({ type: "SUCCESS", payload: results });
+        const intentTask = (res.intent as any)?.task_type ?? "your use case";
+        setReasoning(
+          `Matched tools for "${prompt}" using ${intentTask} intent. Ranked by community rating and use-case fit.`
+        );
+      } catch (err: any) {
+        dispatch({
+          type: "ERROR",
+          payload: err?.message ?? "Recommendation failed",
+        });
+        setReasoning("");
+      }
+    },
+    []
+  );
 
-  return { recommendations, loading, reasoning, getRecommendations };
+  const reset = useCallback(() => {
+    dispatch({ type: "RESET" });
+    setReasoning("");
+  }, []);
+
+  return {
+    recommendations: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+    reasoning,
+    getRecommendations,
+    reset,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin hooks
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useAdminStats() {
+  const [state, dispatch] = useReducer(
+    createAsyncReducer<{
+      totalUsers: number;
+      roleBreakdown: Record<string, number>;
+      totalTools: number;
+      totalReviews: number;
+      pendingSubmissions: number;
+    } | null>(null),
+    { data: null, status: "idle", error: null }
+  );
+
+  const { adminApi } = require("./api");
+
+  useEffect(() => {
+    dispatch({ type: "LOADING" });
+    adminApi
+      .stats()
+      .then((data: any) => dispatch({ type: "SUCCESS", payload: data }))
+      .catch((err: any) =>
+        dispatch({
+          type: "ERROR",
+          payload: err?.message ?? "Failed to load stats",
+        })
+      );
+  }, []);
+
+  return {
+    stats: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+  };
+}
+
+export function useAdminSubmissions(page = 1, limit = 20) {
+  const [state, dispatch] = useReducer(createAsyncReducer<any[]>([]), {
+    data: [],
+    status: "idle",
+    error: null,
+  });
+  const [totalPages, setTotalPages] = useState(1);
+  const { adminApi } = require("./api");
+
+  useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
+    adminApi
+      .getSubmissions({ page, limit })
+      .then((res: any) => {
+        if (!cancelled) {
+          dispatch({ type: "SUCCESS", payload: res.data });
+          setTotalPages(res.meta.totalPages);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load submissions",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page, limit]);
+
+  const reviewSubmission = useCallback(
+    async (
+      id: string,
+      action: "approve" | "reject",
+      adminNote?: string,
+      toolData?: object
+    ) => {
+      await adminApi.reviewSubmission(id, { action, adminNote, toolData });
+    },
+    []
+  );
+
+  return {
+    submissions: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    totalPages,
+    reviewSubmission,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pagination helper hook
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function usePagination(totalPages: number, initialPage = 1) {
+  const [page, setPage] = useState(initialPage);
+
+  const goTo = useCallback(
+    (p: number) => setPage(Math.max(1, Math.min(p, totalPages))),
+    [totalPages]
+  );
+  const next = useCallback(() => goTo(page + 1), [goTo, page]);
+  const prev = useCallback(() => goTo(page - 1), [goTo, page]);
+
+  return {
+    page,
+    goTo,
+    next,
+    prev,
+    hasNext: page < totalPages,
+    hasPrev: page > 1,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Debounce helper hook
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
 }

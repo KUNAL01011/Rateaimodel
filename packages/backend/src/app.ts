@@ -5,14 +5,14 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import { morganMiddleware } from "./utils";
 import { errorHandler, globalLimiter, notFoundHandler } from "./middlewares";
-import routes from "./routes/v1";
+import routes from "./routes";
 
 const app: Application = express();
 
 app.use(helmet());
 app.use(
   cors({
-    origin: ["https://localhost:3000"],
+    origin: ["http://localhost:3000"],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,

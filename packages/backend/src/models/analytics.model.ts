@@ -7,12 +7,17 @@ export interface IToolAnalyticsDay extends Document {
   pageViews: number;
   uniqueVisitors: number;
   recommAppearances: number; // times shown in recommender results
-  recommClicks: number;      // times clicked from recommender
+  recommClicks: number; // times clicked from recommender
   reviewsReceived: number;
 }
 
 const ToolAnalyticsDaySchema = new Schema<IToolAnalyticsDay>({
-  toolId: { type: Schema.Types.ObjectId, ref: "Tool", required: true, index: true },
+  toolId: {
+    type: Schema.Types.ObjectId,
+    ref: "Tool",
+    required: true,
+    index: true,
+  },
   date: { type: Date, required: true, index: true },
   pageViews: { type: Number, default: 0 },
   uniqueVisitors: { type: Number, default: 0 },
@@ -31,11 +36,11 @@ export const ToolAnalyticsDay = mongoose.model<IToolAnalyticsDay>(
 
 // ─── RecommendationCache ──────────────────────────────────────────────────────
 export interface IRecommendationCache extends Document {
-  inputHash: string;       // SHA256(task_description + filters JSON)
+  inputHash: string; // SHA256(task_description + filters JSON)
   taskDescription: string;
   filtersJson: string;
-  intentJson: string;      // LLM-extracted intent
-  resultsJson: string;     // full result set
+  intentJson: string; // LLM-extracted intent
+  resultsJson: string; // full result set
   hitCount: number;
   expiresAt: Date;
   createdAt: Date;
@@ -49,12 +54,17 @@ const RecommendationCacheSchema = new Schema<IRecommendationCache>(
     intentJson: { type: String, required: true },
     resultsJson: { type: String, required: true },
     hitCount: { type: Number, default: 1 },
-    expiresAt: { type: Date, required: true, index: true },
+
+    // FIXED
+    expiresAt: {
+      type: Date,
+      required: true,
+    },
   },
   { timestamps: true }
 );
 
-// TTL index — MongoDB auto-deletes expired cache docs
+// TTL index
 RecommendationCacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const RecommendationCache = mongoose.model<IRecommendationCache>(
