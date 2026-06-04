@@ -2,21 +2,126 @@
 import { useState, useEffect, useCallback } from "react";
 import { AITool, SearchFilters, Review } from "./types";
 import { MOCK_TOOLS, MOCK_CATEGORIES, searchTools } from "./mockData";
+import {
+  authApi,
+  toolsApi,
+  searchApi,
+  categoriesApi,
+  reviewsApi,
+  savedApi,
+  recommendApi,
+  BackendTool,
+  BackendCategory,
+  BackendReview,
+  AuthUser,
+} from "./api";
+import {
+  signInWithGoogle as firebaseSignIn,
+  signOutFromFirebase,
+} from "./firebase";
 
-// ─── Tools ───────────────────────────────────────────────────────────────────
+// ── Adapters: backend shape → frontend AITool shape ───────────────────
+function adaptTool(t: BackendTool): AITool {
+  return {
+    id: t._id,
+    slug: t.slug,
+    name: t.name,
+    tagline: t.shortDescription,
+    description: t.fullDescription ?? t.shortDescription,
+    logo:
+      t.logoUrl ??
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(t.name)}&background=7c3aed&color=fff`,
+    owner: {
+      id: t.providerId?.slug ?? "unknown",
+      name: t.providerId?.name ?? "Unknown Provider",
+      logo: t.providerId?.logoUrl ?? "",
+      website: t.websiteUrl ?? "#",
+      founded: "",
+      hq: "",
+      description: "",
+      employees: "",
+      fundingStage: "",
+      totalFunding: "",
+      verified: false,
+    },
+    type: mapToolType(t.toolType),
+    category: mapToolType(t.toolType),
+    tags: t.useCaseCoverage?.slice(0, 5).map(u => u.useCase) ?? [],
+    pricing: mapPricingType(t.pricingType),
+    pricingDetails: "",
+    rating: t.ratingOverall ?? 0,
+    reviewCount: t.reviewsCount ?? 0,
+    ratingBreakdown: {
+      accuracy: 0,
+      speed: 0,
+      costValue: 0,
+      easeOfUse: 0,
+      reliability: 0,
+    },
+    modalities: [],
+    hasApi: t.hasApi,
+    isOpenSource: t.isOpenSource,
+    contextWindow: t.contextWindowTokens
+      ? `${(t.contextWindowTokens / 1000).toFixed(0)}K tokens`
+      : undefined,
+    launchDate: "",
+    lastUpdated: "",
+    benchmarks:
+      t.benchmarks?.map(b => ({
+        name: b.benchmarkName,
+        score: String(b.score) + (b.scoreUnit ? b.scoreUnit : ""),
+        vsAvg: "",
+        positive: true,
+      })) ?? [],
+    reviews: [],
+    featured: t.isFeatured,
+    verified: false,
+    website: t.websiteUrl ?? "#",
+  };
+}
 
+function mapToolType(t: string): any {
+  const map: Record<string, string> = {
+    llm_model: "LLM",
+    chat_product: "Bot",
+    search_product: "Agent",
+    coding_tool: "Code",
+    image_model: "Image",
+    video_model: "Video",
+    audio_model: "Audio",
+    embedding_model: "LLM",
+    agent_framework: "Agent",
+    multimodal_tool: "Multimodal",
+    open_source_model: "LLM",
+  };
+  return map[t] ?? "LLM";
+}
+
+function mapPricingType(t: string): any {
+  const map: Record<string, string> = {
+    free: "Free",
+    open_source_free: "Open Source",
+    freemium: "Freemium",
+    subscription: "Paid",
+    pay_per_token: "Paid",
+    pay_per_use: "Paid",
+    enterprise: "Enterprise",
+  };
+  return map[t] ?? "Freemium";
+}
+
+// ── Tools ───────────────────────────────────────────────────────────────
 export function useTools() {
   const [tools, setTools] = useState<AITool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // TODO: GET /api/tools
-    const timer = setTimeout(() => {
-      setTools(MOCK_TOOLS);
-      setLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
+    toolsApi
+      .getAll({ limit: 50 })
+      .then(res => setTools(res.data.map(adaptTool)))
+      .catch(() => setTools(MOCK_TOOLS))
+      .finally(() => setLoading(false));
   }, []);
 
   return { tools, loading, error };
@@ -30,14 +135,15 @@ export function useTool(slug: string) {
   useEffect(() => {
     if (!slug) return;
     setLoading(true);
-    // TODO: GET /api/tools/:slug
-    const timer = setTimeout(() => {
-      const found = MOCK_TOOLS.find(t => t.slug === slug);
-      if (found) setTool(found);
-      else setError("Tool not found");
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(timer);
+    toolsApi
+      .getBySlug(slug)
+      .then(t => setTool(adaptTool(t)))
+      .catch(() => {
+        const found = MOCK_TOOLS.find(t => t.slug === slug);
+        if (found) setTool(found);
+        else setError("Tool not found");
+      })
+      .finally(() => setLoading(false));
   }, [slug]);
 
   return { tool, loading, error };
@@ -48,12 +154,11 @@ export function useFeaturedTools() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: GET /api/tools/featured
-    const timer = setTimeout(() => {
-      setTools(MOCK_TOOLS.filter(t => t.featured));
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(timer);
+    toolsApi
+      .getFeatured()
+      .then(data => setTools(data.map(adaptTool)))
+      .catch(() => setTools(MOCK_TOOLS.filter(t => t.featured)))
+      .finally(() => setLoading(false));
   }, []);
 
   return { tools, loading };
@@ -64,19 +169,17 @@ export function useTrendingTools() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: GET /api/tools/trending
-    const timer = setTimeout(() => {
-      setTools(MOCK_TOOLS.filter(t => t.trending));
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(timer);
+    toolsApi
+      .getTrending()
+      .then(data => setTools(data.map(adaptTool)))
+      .catch(() => setTools(MOCK_TOOLS.filter(t => t.trending)))
+      .finally(() => setLoading(false));
   }, []);
 
   return { tools, loading };
 }
 
-// ─── Search & Filters ────────────────────────────────────────────────────────
-
+// ── Search ────────────────────────────────────────────────────────────
 export function useSearch(initialQuery = "") {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<AITool[]>([]);
@@ -87,59 +190,104 @@ export function useSearch(initialQuery = "") {
     setQuery(q);
     if (f) setFilters(f);
     setLoading(true);
-    // TODO: GET /api/search?q=:query&filters=...
-    setTimeout(() => {
-      let results = q ? searchTools(q) : MOCK_TOOLS;
-      if (f?.types?.length)
-        results = results.filter(t => f.types!.includes(t.type));
-      if (f?.pricing?.length)
-        results = results.filter(t => f.pricing!.includes(t.pricing));
-      if (f?.hasApi !== null && f?.hasApi !== undefined)
-        results = results.filter(t => t.hasApi === f.hasApi);
-      if (f?.isOpenSource !== null && f?.isOpenSource !== undefined)
-        results = results.filter(t => t.isOpenSource === f.isOpenSource);
-      if (f?.minRating) results = results.filter(t => t.rating >= f.minRating!);
-      setResults(results);
+
+    if (!q.trim()) {
+      setResults([]);
       setLoading(false);
-    }, 300);
+      return;
+    }
+
+    searchApi
+      .search(q)
+      .then(res => {
+        let list = res.data.map(adaptTool);
+        // Apply client-side filters on top
+        if (f?.types?.length)
+          list = list.filter(t => f.types!.includes(t.type));
+        if (f?.hasApi != null) list = list.filter(t => t.hasApi === f.hasApi);
+        if (f?.isOpenSource != null)
+          list = list.filter(t => t.isOpenSource === f.isOpenSource);
+        setResults(list);
+      })
+      .catch(() => {
+        let fallback = q ? searchTools(q) : MOCK_TOOLS;
+        if (f?.types?.length)
+          fallback = fallback.filter(t => f.types!.includes(t.type));
+        setResults(fallback);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   return { query, results, loading, filters, setFilters, search };
 }
 
-// ─── Categories ──────────────────────────────────────────────────────────────
-
+// ── Categories ───────────────────────────────────────────────────────
 export function useCategories() {
   const [categories, setCategories] = useState(MOCK_CATEGORIES);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: GET /api/categories
-    const timer = setTimeout(() => {
-      setCategories(MOCK_CATEGORIES);
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(timer);
+    categoriesApi
+      .getAll()
+      .then(data => {
+        // Map to frontend Category shape
+        const mapped = data.map((c, i) => ({
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          description: c.description,
+          icon: c.icon,
+          count: c.count,
+          featured: [],
+        }));
+        setCategories(mapped as any);
+      })
+      .catch(() => {
+        /* keep MOCK_CATEGORIES */
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   return { categories, loading };
 }
 
-// ─── Reviews ─────────────────────────────────────────────────────────────────
-
+// ── Reviews ──────────────────────────────────────────────────────────
 export function useReviews(toolId: string) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!toolId) return;
-    // TODO: GET /api/tools/:toolId/reviews
-    const timer = setTimeout(() => {
-      const tool = MOCK_TOOLS.find(t => t.id === toolId);
-      setReviews(tool?.reviews ?? []);
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(timer);
+    reviewsApi
+      .getByTool(toolId)
+      .then(res => {
+        const mapped: Review[] = res.data.map(r => ({
+          id: r._id,
+          userId: (r.userId as any)?._id ?? "",
+          userName:
+            (r.userId as any)?.displayName ??
+            (r.userId as any)?.username ??
+            "User",
+          userInitials: (
+            (r.userId as any)?.displayName ??
+            (r.userId as any)?.username ??
+            "U"
+          )
+            .slice(0, 2)
+            .toUpperCase(),
+          rating: r.ratingOverall,
+          title: r.reviewText.slice(0, 80),
+          body: r.reviewText,
+          pros: r.pros ? [r.pros] : [],
+          cons: r.cons ? [r.cons] : [],
+          useCase: r.useCase,
+          date: new Date(r.createdAt).toLocaleDateString(),
+          helpful: r.upvotes,
+        }));
+        setReviews(mapped);
+      })
+      .catch(() => setReviews([]))
+      .finally(() => setLoading(false));
   }, [toolId]);
 
   return { reviews, loading };
@@ -167,15 +315,26 @@ export function useSubmitReview() {
   }) => {
     setLoading(true);
     setError(null);
-    // TODO: POST /api/reviews { ...data, userId: session.user.id }
-    return new Promise<void>(resolve => {
-      setTimeout(() => {
-        console.log("Review submitted:", data);
-        setSuccess(true);
-        setLoading(false);
-        resolve();
-      }, 1500);
-    });
+    try {
+      await reviewsApi.create({
+        toolId: data.toolId,
+        useCase: data.useCase,
+        ratingOverall: data.rating,
+        ratingAccuracy: data.ratingBreakdown.accuracy || undefined,
+        ratingSpeed: data.ratingBreakdown.speed || undefined,
+        ratingCostValue: data.ratingBreakdown.costValue || undefined,
+        ratingEaseOfUse: data.ratingBreakdown.easeOfUse || undefined,
+        reviewText: data.body,
+        pros: data.pros.filter(Boolean).join("; "),
+        cons: data.cons.filter(Boolean).join("; "),
+        wouldRecommend: data.rating >= 3,
+      });
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to submit review");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return { submitReview, loading, error, success };
@@ -183,24 +342,39 @@ export function useSubmitReview() {
 
 export function useHelpfulVote() {
   const voteHelpful = async (reviewId: string) => {
-    // TODO: POST /api/reviews/:reviewId/helpful
-    console.log("Voted helpful:", reviewId);
+    await reviewsApi.vote(reviewId, "up").catch(() => {});
   };
   return { voteHelpful };
 }
 
-// ─── Save / Bookmarks ────────────────────────────────────────────────────────
-
+// ── Saved Tools ──────────────────────────────────────────────────────
 export function useSavedTools() {
   const [saved, setSaved] = useState<string[]>([]);
 
+  // Load saved tools for logged-in user
+  useEffect(() => {
+    savedApi
+      .getAll()
+      .then(tools => setSaved(tools.map((t: any) => t._id ?? t.id)))
+      .catch(() => {
+        /* not logged in or error */
+      });
+  }, []);
+
   const toggleSave = async (toolId: string) => {
-    // TODO: POST /api/user/saved { toolId }
-    setSaved(prev =>
-      prev.includes(toolId)
-        ? prev.filter(id => id !== toolId)
-        : [...prev, toolId]
-    );
+    try {
+      const res = await savedApi.toggle(toolId);
+      setSaved(prev =>
+        res.saved ? [...prev, toolId] : prev.filter(id => id !== toolId)
+      );
+    } catch {
+      // Optimistic fallback
+      setSaved(prev =>
+        prev.includes(toolId)
+          ? prev.filter(id => id !== toolId)
+          : [...prev, toolId]
+      );
+    }
   };
 
   const isSaved = (toolId: string) => saved.includes(toolId);
@@ -208,41 +382,66 @@ export function useSavedTools() {
   return { saved, toggleSave, isSaved };
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
+// ── Auth ─────────────────────────────────────────────────────────────
 export function useAuth() {
   const [user, setUser] = useState<{
     id: string;
     name: string;
     email: string;
     avatar: string;
+    role: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Re-hydrate from cookie/session on mount
+  useEffect(() => {
+    authApi
+      .me()
+      .then(u =>
+        setUser({
+          id: u.id,
+          name: u.displayName ?? u.username,
+          email: u.email,
+          avatar: u.avatarUrl ?? "",
+          role: u.role,
+        })
+      )
+      .catch(() => {
+        /* Not logged in */
+      });
+  }, []);
+
   const signInWithGoogle = async () => {
     setLoading(true);
-    // TODO: NextAuth signIn('google') or Supabase OAuth
-    setTimeout(() => {
+    try {
+      const idToken = await firebaseSignIn();
+      const res = await authApi.googleLogin(idToken);
       setUser({
-        id: "u-demo",
-        name: "Kunal Kumar",
-        email: "kunal@example.com",
-        avatar: "",
+        id: res.user.id,
+        name: res.user.displayName ?? res.user.username,
+        email: res.user.email,
+        avatar: res.user.avatarUrl ?? "",
+        role: res.user.role,
       });
+    } catch (err) {
+      console.error("Login failed:", err);
+    } finally {
       setLoading(false);
-    }, 1200);
+    }
   };
 
   const signOut = async () => {
-    // TODO: NextAuth signOut() or Supabase signOut()
+    await Promise.all([
+      authApi.logout().catch(() => {}),
+      signOutFromFirebase().catch(() => {}),
+    ]);
     setUser(null);
   };
 
   return { user, loading, signInWithGoogle, signOut };
 }
 
-// ─── List Your Model ─────────────────────────────────────────────────────────
-
+// ── List Your Model ──────────────────────────────────────────────────
 export function useListTool() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -251,22 +450,28 @@ export function useListTool() {
   const submitTool = async (data: Record<string, unknown>) => {
     setLoading(true);
     setError(null);
-    // TODO: POST /api/tools/submit { ...data } — requires auth, goes to moderation queue
-    return new Promise<void>(resolve => {
-      setTimeout(() => {
-        console.log("Tool submitted for review:", data);
-        setSuccess(true);
-        setLoading(false);
-        resolve();
-      }, 2000);
-    });
+    try {
+      const formData = new FormData();
+      Object.entries(data).forEach(([k, v]) => {
+        if (v !== undefined && v !== null) {
+          if (Array.isArray(v)) formData.append(k, v.join(","));
+          else formData.append(k, String(v));
+        }
+      });
+      const res = await toolsApi.submit(formData);
+      if (res.success === false) throw new Error(res.message);
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message ?? "Submission failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return { submitTool, loading, success, error };
 }
 
-// ─── AI Recommendation ───────────────────────────────────────────────────────
-
+// ── AI Recommendation ────────────────────────────────────────────────
 export function useAIRecommendation() {
   const [recommendations, setRecommendations] = useState<AITool[]>([]);
   const [loading, setLoading] = useState(false);
@@ -275,8 +480,14 @@ export function useAIRecommendation() {
   const getRecommendations = async (prompt: string) => {
     setLoading(true);
     setRecommendations([]);
-    // TODO: POST /api/recommend { prompt } — calls Claude API to match tools
-    setTimeout(() => {
+    try {
+      const res = await recommendApi.recommend(prompt, {}, 4);
+      setRecommendations(res.recommendations.map(r => adaptTool(r.tool)));
+      setReasoning(
+        `Based on your request, I matched tools using ${(res.intent as any)?.task_type ?? "your use case"} intent. Results sorted by community rating and use-case fit.`
+      );
+    } catch {
+      // Fallback to mock
       const q = prompt.toLowerCase();
       let recs = MOCK_TOOLS.filter(
         t =>
@@ -286,10 +497,11 @@ export function useAIRecommendation() {
       if (!recs.length) recs = MOCK_TOOLS.slice(0, 4);
       setRecommendations(recs);
       setReasoning(
-        `Based on your request for "${prompt}", I've matched tools that excel in those areas based on community ratings, benchmark data, and use-case alignment.`
+        `Matched tools based on "${prompt}" using keyword analysis.`
       );
+    } finally {
       setLoading(false);
-    }, 1800);
+    }
   };
 
   return { recommendations, loading, reasoning, getRecommendations };

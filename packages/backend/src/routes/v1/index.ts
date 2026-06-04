@@ -9,7 +9,6 @@ import userRoutes from "./user.route";
 
 const router = Router();
 
-// ── Auth ──────────────────────────────────────────────────────
 router.use("/auth", authRoutes);
 router.use("/tools", toolRoutes);
 router.use("/recommend", recommendationRoutes);

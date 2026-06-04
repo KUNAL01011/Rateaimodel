@@ -3,6 +3,7 @@ import { Router } from "express";
 
 const router = Router();
 
-router.get("/search", search);
+// GET /api/v1/search?q=...&page=1&limit=20
+router.get("/", search);
 
 export default router;

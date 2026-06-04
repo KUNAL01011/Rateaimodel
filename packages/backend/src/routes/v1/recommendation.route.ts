@@ -1,9 +1,15 @@
-import { recommend } from "@/controllers";
+import { recommend, getUseCases } from "@/controllers";
 import { authenticate } from "@/middlewares";
+import { validate } from "@/middlewares";
+import { recommendSchema } from "@/validators";
 import { Router } from "express";
 
 const router = Router();
 
-router.post("/recommend", authenticate, recommend);
+// POST /api/v1/recommend  — AI-powered tool matching
+router.post("/", authenticate, validate(recommendSchema), recommend);
+
+// GET  /api/v1/recommend/use-cases  — taxonomy
+router.get("/use-cases", getUseCases);
 
 export default router;

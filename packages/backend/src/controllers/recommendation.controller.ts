@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler, ApiResponse } from "@/utils";
 import { recommendationService } from "@/services";
-import { analyticsService } from "@/services";
 
 export const recommend = asyncHandler(async (req: Request, res: Response) => {
   const { task_description, filters, limit } = req.body;
@@ -11,13 +10,30 @@ export const recommend = asyncHandler(async (req: Request, res: Response) => {
     limit
   );
 
-  result.recommendations.forEach((r: any) => {
-    analyticsService
-      .recordRecommendAppearance(String(r.tool._id))
-      .catch(() => {});
-  });
+  // result.recommendations.forEach((r: any) => {
+  //   analyticsService
+  //     .recordRecommendAppearance(String(r.tool._id))
+  //     .catch(() => {});
+  // });
 
   return res
     .status(200)
     .json(new ApiResponse(200, result, "Recommendations ready"));
 });
+
+export const recordRecommendClick = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { toolId } = req.params;
+    // await analyticsService.recordRecommendClick(toolId).catch(() => {});
+    return res.status(200).json(new ApiResponse(200, null, "Click recorded"));
+  }
+);
+
+export const getUseCases = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const taxonomy = recommendationService.getUseCaseTaxonomy();
+    return res
+      .status(200)
+      .json(new ApiResponse(200, taxonomy, "Use case taxonomy"));
+  }
+);

@@ -1,4 +1,4 @@
-import { Review, ToolOwnership, User } from "@/models";
+import { Review, ToolOwnership, User, SavedTool } from "@/models";
 import { ApiError } from "@/utils";
 
 export interface GetAllUsersParams {
@@ -11,10 +11,9 @@ export interface GetAllUsersParams {
 }
 
 const PUBLIC_FIELDS =
-  "username displayName avatarUrl bio role reviewCount helpfulVoteCount isApiUser createdAt";
-
+  "username displayName avatarUrl bio role reviewCount helpfulVoteCount createdAt";
 const PRIVATE_FIELDS =
-  "username displayName avatarUrl bio role reviewCount helpfulVoteCount isApiUser emailVerified email createdAt updatedAt";
+  "username displayName avatarUrl bio role reviewCount helpfulVoteCount isApiUser email createdAt updatedAt";
 
 export const userService = {
   async getAllUsers({
@@ -26,9 +25,7 @@ export const userService = {
     sortOrder,
   }: GetAllUsersParams) {
     const filter: Record<string, any> = {};
-
     if (role) filter.role = role;
-
     if (search) {
       filter.$or = [
         { username: { $regex: search, $options: "i" } },
@@ -36,22 +33,18 @@ export const userService = {
         { email: { $regex: search, $options: "i" } },
       ];
     }
-
     const sort: Record<string, 1 | -1> = {
       [sortBy]: sortOrder === "asc" ? 1 : -1,
     };
-
     const skip = (page - 1) * limit;
-
     const [users, total] = await Promise.all([
       User.find(filter)
-        .select(PRIVATE_FIELDS) // admin sees email too
+        .select(PRIVATE_FIELDS)
         .sort(sort)
         .skip(skip)
         .limit(limit),
       User.countDocuments(filter),
     ]);
-
     return {
       data: users,
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
@@ -90,16 +83,13 @@ export const userService = {
         username: data.username,
         _id: { $ne: userId },
       });
-      if (taken) throw new ApiError(409, "This username is already token");
+      if (taken) throw new ApiError(409, "This username is already taken");
     }
-
     const user = await User.findByIdAndUpdate(userId, data, {
       new: true,
       runValidators: true,
     }).select(PRIVATE_FIELDS);
-
     if (!user) throw new ApiError(404, "User not found");
-
     return user;
   },
 
@@ -109,7 +99,6 @@ export const userService = {
       { role },
       { new: true }
     ).select(PRIVATE_FIELDS);
-
     if (!user) throw new ApiError(404, "User not found");
     return user;
   },
@@ -117,48 +106,33 @@ export const userService = {
   async deleteAccount(userId: string) {
     const user = await User.findByIdAndDelete(userId);
     if (!user) throw new ApiError(404, "User not found");
-
     await Promise.all([
       Review.deleteMany({ userId }),
       ToolOwnership.deleteMany({ userId }),
+      SavedTool.deleteMany({ userId }),
     ]);
-
     return user;
-  },
-
-  async deleteAccountAdmin(userId: string) {
-    return userService.deleteAccount(userId);
   },
 
   async getUserReviews(
     username: string,
     { page = 1, limit = 10 }: { page?: number; limit?: number }
   ) {
-    const user = await User.findOne({
-      username,
-    });
+    const user = await User.findOne({ username });
     if (!user) throw new ApiError(404, "User not found");
-
     const filter = { userId: user._id, isHidden: false };
     const skip = (page - 1) * limit;
-
     const [data, total] = await Promise.all([
       Review.find(filter)
-        .populate("toolId", "name slug logoUrl")
+        .populate("toolId", "name slug logoUrl shortDescription")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
       Review.countDocuments(filter),
     ]);
-
     return {
       data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit) || 1,
-      },
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
     };
   },
 
@@ -167,7 +141,6 @@ export const userService = {
       User.countDocuments(),
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
     ]);
-
     const roleBreakdown = totalByRole.reduce(
       (acc: Record<string, number>, cur) => {
         acc[cur._id] = cur.count;
@@ -175,7 +148,6 @@ export const userService = {
       },
       {}
     );
-
     return { totalUsers, roleBreakdown };
   },
 };

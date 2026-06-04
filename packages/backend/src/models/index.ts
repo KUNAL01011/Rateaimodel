@@ -5,3 +5,5 @@ export * from "./tool.model";
 export * from "./review.model";
 export * from "./ownership.model";
 export * from "./analytics.model";
+export * from "./saved-tool.model";
+export * from "./tool-submission.model";

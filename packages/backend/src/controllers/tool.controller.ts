@@ -1,9 +1,10 @@
 import type { Request, Response } from "express";
 import { asyncHandler, ApiResponse } from "@/utils";
 import { toolService } from "@/services";
-import { analyticsService } from "@/services";
-import { uploadSubmissionToDrive } from "@/services/drive.service";
-import { deleteLocalFile, uploadImage } from "@/configs/cloudinary.config";
+// import { analyticsService } from "@/services";
+import { uploadImage, deleteLocalFile } from "@/configs/cloudinary.config";
+import { ToolSubmission } from "@/models";
+import { ApiError } from "@/utils";
 
 export const getTools = asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -36,8 +37,7 @@ export const getTools = asyncHandler(async (req: Request, res: Response) => {
 export const getToolBySlug = asyncHandler(
   async (req: Request, res: Response) => {
     const tool = await toolService.getBySlug(req.params.slug as string);
-    // Fire-and-forget analytics
-    analyticsService.recordPageView(String(tool._id)).catch(() => {});
+    // analyticsService.recordPageView(String(tool._id)).catch(() => {});
     return res.status(200).json(new ApiResponse(200, tool, "Tool fetched"));
   }
 );
@@ -53,10 +53,22 @@ export const getFeaturedTools = asyncHandler(
 
 export const getTrendingTools = asyncHandler(
   async (req: Request, res: Response) => {
-    const tools = await toolService.getFeatured(Number(req.query.limit ?? 10));
+    const tools = await toolService.getTrending(Number(req.query.limit ?? 10));
     return res
       .status(200)
-      .json(new ApiResponse(200, tools, "Featured tools fetched"));
+      .json(new ApiResponse(200, tools, "Trending tools fetched"));
+  }
+);
+
+export const getSimilarTools = asyncHandler(
+  async (req: Request, res: Response) => {
+    const tools = await toolService.getSimilar(
+      req.params.slug as string,
+      Number(req.query.limit ?? 5)
+    );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, tools, "Similar tools fetched"));
   }
 );
 
@@ -65,51 +77,69 @@ export const createTool = asyncHandler(async (req: Request, res: Response) => {
   return res.status(201).json(new ApiResponse(201, tool, "Tool created"));
 });
 
+export const updateTool = asyncHandler(async (req: Request, res: Response) => {
+  const tool = await toolService.update(req.params.slug as string, req.body);
+  return res.status(200).json(new ApiResponse(200, tool, "Tool updated"));
+});
+
+export const deleteTool = asyncHandler(async (req: Request, res: Response) => {
+  await toolService.delete(req.params.slug as string);
+  return res.status(200).json(new ApiResponse(200, null, "Tool deleted"));
+});
+
+export const upsertBenchmark = asyncHandler(
+  async (req: Request, res: Response) => {
+    const tool = await toolService.upsertBenchmark(
+      req.params.slug as string,
+      req.body
+    );
+    return res
+      .status(200)
+      .json(new ApiResponse(200, tool, "Benchmark updated"));
+  }
+);
+
+/* ── POST /api/v1/tools/submit ── */
 export const createToolListingRequest = asyncHandler(
   async (req: Request, res: Response) => {
     const data = req.body;
-    let logoUrl = "No logo provided";
+    let logoUrl: string | undefined;
 
-    // 1. If a logo file was attached, upload to Cloudinary
     if (req.file) {
-      const uploadRes = await uploadImage(req.file.path, "tool-submissions");
-      logoUrl = uploadRes.secure_url;
-      // Clean up local temp file after upload
-      deleteLocalFile(req.file.path);
+      try {
+        const uploadRes = await uploadImage(req.file.path, "tool-submissions");
+        logoUrl = uploadRes.secure_url;
+      } finally {
+        deleteLocalFile(req.file.path);
+      }
     }
 
-    // 2. Format the submission into a readable text format for Google Drive
-    const submissionText = `
---- NEW TOOL SUBMISSION ---
-Name: ${data.name}
-Website: ${data.website}
-Tagline: ${data.tagline}
-Description: ${data.description}
-Tool Type: ${data.toolType}
-Pricing: ${data.pricing}
-Pricing Details: ${data.pricingDetails || "N/A"}
-Modalities: ${data.modalities || "N/A"}
-Has API: ${data.hasApi}
-Is Open Source: ${data.isOpenSource}
+    const submission = await ToolSubmission.create({
+      submittedById: req.userId,
+      submittedByEmail: (req.user as any).email,
+      name: data.name,
+      website: data.website,
+      tagline: data.tagline,
+      description: data.description,
+      toolType: data.toolType,
+      pricing: data.pricing,
+      pricingDetails: data.pricingDetails,
+      modalities: data.modalities,
+      hasApi: data.hasApi === "true" || data.hasApi === true,
+      isOpenSource: data.isOpenSource === "true" || data.isOpenSource === true,
+      ownerName: data.ownerName,
+      ownerEmail: data.ownerEmail,
+      logoUrl,
+    });
 
--- Provider Info --
-Owner Name: ${data.ownerName}
-Owner Email: ${data.ownerEmail}
-
--- Assets --
-Logo URL: ${logoUrl}
-`;
-
-    // 3. Upload the text file to Google Drive
-    const safeFileName = data.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
-    await uploadSubmissionToDrive(
-      `submission_${safeFileName}_${Date.now()}`,
-      submissionText
-    );
-
-    // 4. Return success to the frontend (data is NOT saved to the DB yet)
     return res
       .status(201)
-      .json(new ApiResponse(201, null, "Tool submission sent for review."));
+      .json(
+        new ApiResponse(
+          201,
+          { id: submission._id },
+          "Tool submission received. We'll review it within 1-3 business days."
+        )
+      );
   }
 );
