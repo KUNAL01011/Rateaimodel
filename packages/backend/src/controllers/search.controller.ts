@@ -2,6 +2,11 @@ import { asyncHandler, ApiResponse } from "@/utils";
 import { Request, Response } from "express";
 import { Tool } from "@/models";
 
+// Escape special regex characters to prevent ReDoS
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export const search = asyncHandler(async (req: Request, res: Response) => {
   const { q, page = "1", limit = "20" } = req.query;
 
@@ -18,17 +23,25 @@ export const search = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const query = q.trim();
-  const pageNum = Math.max(1, parseInt(page as string));
-  const limitNum = Math.min(50, Math.max(1, parseInt(limit as string)));
+
+  // Guard against NaN from non-numeric strings
+  const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+  const limitNum = Math.min(
+    50,
+    Math.max(1, parseInt(limit as string, 10) || 20)
+  );
   const skip = (pageNum - 1) * limitNum;
+
+  // Escape user input before using in regex to prevent ReDoS
+  const safeQuery = escapeRegex(query);
 
   const textFilter = {
     isDeprecated: false,
     $or: [
-      { name: { $regex: query, $options: "i" } },
-      { shortDescription: { $regex: query, $options: "i" } },
-      { fullDescription: { $regex: query, $options: "i" } },
-      { "useCaseCoverage.useCase": { $regex: query, $options: "i" } },
+      { name: { $regex: safeQuery, $options: "i" } },
+      { shortDescription: { $regex: safeQuery, $options: "i" } },
+      { fullDescription: { $regex: safeQuery, $options: "i" } },
+      { "useCaseCoverage.useCase": { $regex: safeQuery, $options: "i" } },
     ],
   };
 

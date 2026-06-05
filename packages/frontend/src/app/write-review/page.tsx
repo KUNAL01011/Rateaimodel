@@ -1,7 +1,12 @@
 "use client";
-import { use, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useSubmitReview, useAuth, useTool } from "@/lib/hooks";
+import {
+  useSubmitReview,
+  useAuth,
+  useTool,
+  USE_CASE_DISPLAY_TO_ENUM,
+} from "@/lib/hooks";
 import StarRating from "@/components/ui/StarRating";
 import Link from "next/link";
 import {
@@ -12,23 +17,12 @@ import {
   Shield,
   Star,
   Plus,
-  Minus,
   Loader2,
   X,
 } from "lucide-react";
 
-const USE_CASES = [
-  "Coding & Development",
-  "Content Writing",
-  "Research & Analysis",
-  "Image/Video Creation",
-  "Data Processing",
-  "Customer Support",
-  "Personal Productivity",
-  "Education",
-  "Marketing",
-  "Other",
-];
+// Display labels for the form — mapped to backend enums in useSubmitReview
+const USE_CASES = Object.keys(USE_CASE_DISPLAY_TO_ENUM);
 
 const RATING_DIMENSIONS = [
   {
@@ -44,10 +38,21 @@ const RATING_DIMENSIONS = [
 function WriteReviewContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const toolId = params.get("tool") ?? "1";
-  const { tool } = useTool("claude-3-opus"); // default for demo; real impl reads toolId
+
+  // Read both the MongoDB _id (for submit) and slug (for display + back link)
+  const toolId = params.get("tool") ?? "";
+  const toolSlug = params.get("slug") ?? "";
+
+  // Fetch tool details for the header card
+  const { tool } = useTool(toolSlug);
+
   const { user, signInWithGoogle, loading: authLoading } = useAuth();
-  const { submitReview, loading: submitLoading, success } = useSubmitReview();
+  const {
+    submitReview,
+    loading: submitLoading,
+    success,
+    error: submitError,
+  } = useSubmitReview();
 
   const [step, setStep] = useState(1);
   const [overallRating, setOverallRating] = useState(0);
@@ -102,19 +107,27 @@ function WriteReviewContent() {
   };
 
   const handleSubmit = async () => {
-    await submitReview({
-      toolId,
-      rating: overallRating,
-      title,
-      body,
-      pros: pros.filter(Boolean),
-      cons: cons.filter(Boolean),
-      useCase,
-      ratingBreakdown: dimensions,
-    });
+    if (!toolId) {
+      setErrors({ submit: "Missing tool ID. Please go back and try again." });
+      return;
+    }
+    try {
+      await submitReview({
+        toolId,
+        rating: overallRating,
+        title,
+        body,
+        pros: pros.filter(Boolean),
+        cons: cons.filter(Boolean),
+        useCase, // display label — mapped to enum inside useSubmitReview
+        ratingBreakdown: dimensions,
+        wouldRecommend: recommend,
+      });
+    } catch {
+      // error is surfaced via submitError
+    }
   };
 
-  // Success screen
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
@@ -139,12 +152,21 @@ function WriteReviewContent() {
             visible after a brief moderation check.
           </p>
           <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => router.back()}
-              className="btn-secondary text-sm px-6 py-2.5"
-            >
-              Back to Tool
-            </button>
+            {toolSlug ? (
+              <Link
+                href={`/tool/${toolSlug}`}
+                className="btn-secondary text-sm px-6 py-2.5"
+              >
+                Back to Tool
+              </Link>
+            ) : (
+              <button
+                onClick={() => router.back()}
+                className="btn-secondary text-sm px-6 py-2.5"
+              >
+                Go Back
+              </button>
+            )}
             <Link href="/" className="btn-primary text-sm px-6 py-2.5">
               Explore More Tools
             </Link>
@@ -156,7 +178,7 @@ function WriteReviewContent() {
 
   return (
     <div className="min-h-screen">
-      {/* Minimal header */}
+      {/* Header */}
       <header
         className="flex items-center justify-between px-6 py-4"
         style={{
@@ -165,7 +187,7 @@ function WriteReviewContent() {
         }}
       >
         <Link
-          href={tool ? `/tool/${tool.slug}` : "/"}
+          href={toolSlug ? `/tool/${toolSlug}` : "/"}
           className="flex items-center gap-2 text-sm transition-opacity hover:opacity-70"
           style={{ color: "var(--text-muted)", textDecoration: "none" }}
         >
@@ -184,7 +206,7 @@ function WriteReviewContent() {
       </header>
 
       <div className="max-w-xl mx-auto px-6 py-12">
-        {/* Progress */}
+        {/* Progress steps */}
         <div className="flex items-center gap-3 mb-10">
           {Array.from({ length: totalSteps }, (_, i) => (
             <div key={i} className="flex items-center gap-3 flex-1">
@@ -262,6 +284,22 @@ function WriteReviewContent() {
                 by {tool.owner.name}
               </p>
             </div>
+          </div>
+        )}
+
+        {/* Missing toolId warning */}
+        {!toolId && (
+          <div
+            className="rounded-xl p-4 mb-6"
+            style={{
+              background: "rgba(244,63,94,0.08)",
+              border: "1px solid rgba(244,63,94,0.2)",
+            }}
+          >
+            <p className="text-sm" style={{ color: "var(--accent-red)" }}>
+              No tool selected. Please go to a tool page and click "Write
+              Review".
+            </p>
           </div>
         )}
 
@@ -349,12 +387,11 @@ function WriteReviewContent() {
                   className="text-sm"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  Use-case specific ratings help others find the right tool for
-                  their workflow.
+                  Use-case specific ratings help others find the right tool.
                 </p>
               </div>
 
-              {/* Overall */}
+              {/* Overall rating */}
               <div>
                 <label
                   className="block text-sm font-medium mb-3"
@@ -494,8 +531,7 @@ function WriteReviewContent() {
                   className="text-sm"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  Be specific and helpful. Great reviews mention actual tasks
-                  and outcomes.
+                  Be specific — mention actual tasks and outcomes.
                 </p>
               </div>
 
@@ -509,7 +545,7 @@ function WriteReviewContent() {
                 <input
                   value={title}
                   onChange={e => setTitle(e.target.value)}
-                  placeholder="e.g. 'Best model for complex code generation, weak on creative tasks'"
+                  placeholder="e.g. 'Best model for code generation, weak on creative tasks'"
                   className="input-base"
                 />
                 {errors.title && (
@@ -533,7 +569,7 @@ function WriteReviewContent() {
                   value={body}
                   onChange={e => setBody(e.target.value)}
                   rows={5}
-                  placeholder="Describe your experience in detail. What tasks did you use it for? What worked well? What didn't?"
+                  placeholder="Describe your experience. What tasks did you use it for? What worked? What didn't?"
                   className="input-base resize-none"
                 />
                 <div className="flex items-center justify-between mt-1">
@@ -668,7 +704,7 @@ function WriteReviewContent() {
                 </p>
               </div>
 
-              {/* Summary card */}
+              {/* Summary */}
               <div
                 className="rounded-xl p-5 space-y-4"
                 style={{
@@ -694,7 +730,8 @@ function WriteReviewContent() {
                     {body}
                   </p>
                 </div>
-                {pros.filter(Boolean).length > 0 && (
+                {(pros.filter(Boolean).length > 0 ||
+                  cons.filter(Boolean).length > 0) && (
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div>
                       <p
@@ -765,7 +802,7 @@ function WriteReviewContent() {
                 </button>
               </div>
 
-              {/* Author */}
+              {/* Verified author */}
               {user && (
                 <div
                   className="flex items-center gap-3 p-4 rounded-xl"
@@ -800,6 +837,21 @@ function WriteReviewContent() {
                   </div>
                 </div>
               )}
+
+              {/* API error from submit */}
+              {submitError && (
+                <div
+                  className="rounded-xl p-4"
+                  style={{
+                    background: "rgba(244,63,94,0.08)",
+                    border: "1px solid rgba(244,63,94,0.2)",
+                  }}
+                >
+                  <p className="text-sm" style={{ color: "var(--accent-red)" }}>
+                    {submitError}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -827,9 +879,9 @@ function WriteReviewContent() {
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={submitLoading || !user}
+                disabled={submitLoading || !user || !toolId}
                 className="btn-primary text-sm px-8 py-2.5 flex items-center gap-2"
-                style={{ opacity: !user || submitLoading ? 0.6 : 1 }}
+                style={{ opacity: !user || submitLoading || !toolId ? 0.6 : 1 }}
               >
                 {submitLoading ? (
                   <>

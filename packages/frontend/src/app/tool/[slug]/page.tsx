@@ -1,6 +1,11 @@
 "use client";
 import { use, useState } from "react";
-import { useTool, useSavedTools, useHelpfulVote } from "@/lib/hooks";
+import {
+  useTool,
+  useSavedTools,
+  useHelpfulVote,
+  useReviews,
+} from "@/lib/hooks";
 import StarRating from "@/components/ui/StarRating";
 import Link from "next/link";
 import {
@@ -20,6 +25,7 @@ import {
   Clock,
   Calendar,
   MessageSquare,
+  Loader2,
 } from "lucide-react";
 
 type Tab = "overview" | "reviews" | "api";
@@ -90,7 +96,7 @@ export default function ToolDetailPage({
 
   return (
     <div className="min-h-screen">
-      {/* Top bar */}
+      {/* Breadcrumb */}
       <div
         className="px-6 py-4"
         style={{
@@ -120,7 +126,7 @@ export default function ToolDetailPage({
         </div>
       </div>
 
-      {/* Hero section */}
+      {/* Hero */}
       <section
         className="px-6 py-12 relative overflow-hidden"
         style={{
@@ -137,7 +143,6 @@ export default function ToolDetailPage({
         />
         <div className="max-w-5xl mx-auto relative">
           <div className="flex flex-col md:flex-row gap-6 items-start">
-            {/* Logo */}
             <div
               className="w-24 h-24 md:w-32 md:h-32 rounded-2xl flex items-center justify-center overflow-hidden shrink-0"
               style={{
@@ -156,7 +161,6 @@ export default function ToolDetailPage({
               />
             </div>
 
-            {/* Info */}
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="badge">{tool.type}</span>
@@ -173,17 +177,15 @@ export default function ToolDetailPage({
                 )}
               </div>
 
-              <div className="flex flex-wrap items-start gap-4 mb-2">
-                <h1
-                  className="font-display text-3xl md:text-5xl"
-                  style={{
-                    color: "var(--text-primary)",
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {tool.name}
-                </h1>
-              </div>
+              <h1
+                className="font-display text-3xl md:text-5xl mb-2"
+                style={{
+                  color: "var(--text-primary)",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {tool.name}
+              </h1>
               <p
                 className="text-sm mb-1"
                 style={{ color: "var(--text-muted)" }}
@@ -192,17 +194,21 @@ export default function ToolDetailPage({
                 <span style={{ color: "var(--text-secondary)" }}>
                   {tool.owner.name}
                 </span>
-                <span className="mx-2">·</span>
-                <a
-                  href={tool.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 transition-opacity hover:opacity-70"
-                  style={{ color: "var(--primary)" }}
-                >
-                  {tool.website.replace("https://", "")}{" "}
-                  <ExternalLink size={11} />
-                </a>
+                {tool.website && tool.website !== "#" && (
+                  <>
+                    <span className="mx-2">·</span>
+                    <a
+                      href={tool.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 transition-opacity hover:opacity-70"
+                      style={{ color: "var(--primary)" }}
+                    >
+                      {tool.website.replace(/^https?:\/\//, "")}{" "}
+                      <ExternalLink size={11} />
+                    </a>
+                  </>
+                )}
               </p>
               <p
                 className="text-base mt-3 max-w-2xl"
@@ -213,7 +219,7 @@ export default function ToolDetailPage({
             </div>
           </div>
 
-          {/* Metrics row */}
+          {/* Metrics */}
           <div
             className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-8 pt-8"
             style={{ borderTop: "1px solid var(--border)" }}
@@ -223,8 +229,12 @@ export default function ToolDetailPage({
                 label: "Rating",
                 value: (
                   <div className="flex items-center gap-2">
-                    <span className="font-display text-2xl">{tool.rating}</span>
-                    <StarRating value={tool.rating} size={14} />
+                    <span className="font-display text-2xl">
+                      {tool.rating > 0 ? tool.rating.toFixed(1) : "—"}
+                    </span>
+                    {tool.rating > 0 && (
+                      <StarRating value={tool.rating} size={14} />
+                    )}
                   </div>
                 ),
               },
@@ -245,10 +255,10 @@ export default function ToolDetailPage({
                 ),
               },
               {
-                label: "Users",
+                label: "API",
                 value: (
                   <span className="font-semibold text-base">
-                    {tool.usersCount}
+                    {tool.hasApi ? "Available" : "No API"}
                   </span>
                 ),
               },
@@ -273,16 +283,18 @@ export default function ToolDetailPage({
             ))}
           </div>
 
-          {/* CTA buttons */}
+          {/* CTAs */}
           <div className="flex flex-wrap gap-3 mt-6">
-            <a
-              href={tool.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary text-sm px-6 py-2.5 flex items-center gap-2"
-            >
-              Visit Tool <ExternalLink size={13} />
-            </a>
+            {tool.website && tool.website !== "#" && (
+              <a
+                href={tool.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-primary text-sm px-6 py-2.5 flex items-center gap-2"
+              >
+                Visit Tool <ExternalLink size={13} />
+              </a>
+            )}
             <button
               onClick={() => toggleSave(tool.id)}
               className="btn-secondary text-sm px-5 py-2.5 flex items-center gap-2"
@@ -298,14 +310,11 @@ export default function ToolDetailPage({
               )}
             </button>
             <Link
-              href={`/write-review?tool=${tool.id}`}
+              href={`/write-review?tool=${tool.id}&slug=${tool.slug}`}
               className="btn-secondary text-sm px-5 py-2.5 flex items-center gap-2"
             >
               <Star size={14} /> Write Review
             </Link>
-            <button className="btn-secondary text-sm px-4 py-2.5 flex items-center gap-2">
-              <Share2 size={14} />
-            </button>
           </div>
         </div>
       </section>
@@ -359,9 +368,8 @@ export default function ToolDetailPage({
 function OverviewTab({
   tool,
 }: {
-  tool: ReturnType<typeof useTool>["tool"] & object;
+  tool: NonNullable<ReturnType<typeof useTool>["tool"]>;
 }) {
-  if (!tool) return null;
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -379,17 +387,19 @@ function OverviewTab({
           >
             {tool.description}
           </p>
-          <div className="flex flex-wrap gap-2">
-            {tool.tags.map(tag => (
-              <span key={tag} className="badge">
-                {tag}
-              </span>
-            ))}
-          </div>
+          {tool.tags.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {tool.tags.map(tag => (
+                <span key={tag} className="badge">
+                  {tag.replace(/_/g, " ")}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Key specs */}
-        <div className="card p-6 space-y-5">
+        {/* Specs */}
+        <div className="card p-6 space-y-4">
           <h3
             className="font-semibold text-sm"
             style={{ color: "var(--text-primary)" }}
@@ -399,14 +409,8 @@ function OverviewTab({
           {[
             { label: "Pricing", value: tool.pricing },
             { label: "Context Window", value: tool.contextWindow ?? "N/A" },
-            { label: "Latency", value: tool.latency ?? "N/A" },
             { label: "Has API", value: tool.hasApi ? "Yes" : "No" },
             { label: "Open Source", value: tool.isOpenSource ? "Yes" : "No" },
-            {
-              label: "Launched",
-              value: new Date(tool.launchDate).getFullYear().toString(),
-            },
-            { label: "Users", value: tool.usersCount },
           ].map(spec => (
             <div key={spec.label} className="flex items-center justify-between">
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
@@ -423,47 +427,51 @@ function OverviewTab({
         </div>
       </div>
 
-      {/* Rating breakdown */}
-      <div className="card p-7">
-        <h2
-          className="font-display text-xl mb-6"
-          style={{ color: "var(--text-primary)" }}
-        >
-          Performance Ratings
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Object.entries(tool.ratingBreakdown).map(([key, val]) => (
-            <div key={key}>
-              <div className="flex justify-between text-xs mb-2">
-                <span style={{ color: "var(--text-secondary)" }}>
-                  {key
-                    .replace(/([A-Z])/g, " $1")
-                    .replace(/^./, s => s.toUpperCase())}
-                </span>
-                <span
-                  className="font-semibold"
-                  style={{ color: "var(--primary-bright)" }}
-                >
-                  {val}/5
-                </span>
-              </div>
-              <div
-                className="h-1.5 rounded-full overflow-hidden"
-                style={{ background: "var(--bg-card-hover)" }}
-              >
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${(val / 5) * 100}%`,
-                    background:
-                      "linear-gradient(90deg, var(--primary-dim), var(--primary))",
-                  }}
-                />
-              </div>
-            </div>
-          ))}
+      {/* Rating breakdown — only if we have data */}
+      {Object.values(tool.ratingBreakdown).some(v => v > 0) && (
+        <div className="card p-7">
+          <h2
+            className="font-display text-xl mb-6"
+            style={{ color: "var(--text-primary)" }}
+          >
+            Performance Ratings
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {Object.entries(tool.ratingBreakdown)
+              .filter(([, val]) => val > 0)
+              .map(([key, val]) => (
+                <div key={key}>
+                  <div className="flex justify-between text-xs mb-2">
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {key
+                        .replace(/([A-Z])/g, " $1")
+                        .replace(/^./, s => s.toUpperCase())}
+                    </span>
+                    <span
+                      className="font-semibold"
+                      style={{ color: "var(--primary-bright)" }}
+                    >
+                      {val.toFixed(1)}/5
+                    </span>
+                  </div>
+                  <div
+                    className="h-1.5 rounded-full overflow-hidden"
+                    style={{ background: "var(--bg-card-hover)" }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${(val / 5) * 100}%`,
+                        background:
+                          "linear-gradient(90deg, var(--primary-dim), var(--primary))",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Benchmarks */}
       {tool.benchmarks.length > 0 && (
@@ -481,7 +489,7 @@ function OverviewTab({
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  {["Benchmark", "Score", "vs Average"].map(h => (
+                  {["Benchmark", "Score", ""].map(h => (
                     <th
                       key={h}
                       className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider"
@@ -496,7 +504,6 @@ function OverviewTab({
                 {tool.benchmarks.map(b => (
                   <tr
                     key={b.name}
-                    className="transition-colors hover:opacity-80"
                     style={{ borderBottom: "1px solid var(--border)" }}
                   >
                     <td
@@ -512,21 +519,23 @@ function OverviewTab({
                       {b.score}
                     </td>
                     <td className="py-4 px-4">
-                      <span
-                        className="flex items-center gap-1 text-xs font-medium"
-                        style={{
-                          color: b.positive
-                            ? "var(--accent-green)"
-                            : "var(--accent-red)",
-                        }}
-                      >
-                        {b.positive ? (
-                          <ArrowUpRight size={13} />
-                        ) : (
-                          <ArrowDownRight size={13} />
-                        )}
-                        {b.vsAvg}
-                      </span>
+                      {b.vsAvg && (
+                        <span
+                          className="flex items-center gap-1 text-xs font-medium"
+                          style={{
+                            color: b.positive
+                              ? "var(--accent-green)"
+                              : "var(--accent-red)",
+                          }}
+                        >
+                          {b.positive ? (
+                            <ArrowUpRight size={13} />
+                          ) : (
+                            <ArrowDownRight size={13} />
+                          )}
+                          {b.vsAvg}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -536,7 +545,7 @@ function OverviewTab({
         </div>
       )}
 
-      {/* Owner card */}
+      {/* Provider */}
       <div className="card p-7">
         <h2
           className="font-display text-xl mb-6"
@@ -553,78 +562,44 @@ function OverviewTab({
             }}
           >
             <img
-              src={tool.owner.logo}
+              src={
+                tool.owner.logo ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(tool.owner.name)}&background=7c3aed&color=fff`
+              }
               alt={tool.owner.name}
               className="w-full h-full object-contain p-2"
               onError={e => {
                 (e.target as HTMLImageElement).src =
-                  `https://ui-avatars.com/api/?name=${tool.owner.name}&background=7c3aed&color=fff`;
+                  `https://ui-avatars.com/api/?name=${encodeURIComponent(tool.owner.name)}&background=7c3aed&color=fff`;
               }}
             />
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3
-                className="font-semibold"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {tool.owner.name}
-              </h3>
-              {tool.owner.verified && (
-                <Shield
-                  size={13}
-                  style={{
-                    color: "var(--accent-green)",
-                    fill: "var(--accent-green)",
-                  }}
-                />
-              )}
-            </div>
-            <p
-              className="text-sm mb-4"
-              style={{ color: "var(--text-secondary)" }}
+            <h3
+              className="font-semibold mb-1"
+              style={{ color: "var(--text-primary)" }}
             >
-              {tool.owner.description}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                {
-                  icon: <Calendar size={12} />,
-                  label: "Founded",
-                  val: tool.owner.founded,
-                },
-                {
-                  icon: <Users size={12} />,
-                  label: "Employees",
-                  val: tool.owner.employees,
-                },
-                {
-                  icon: <Zap size={12} />,
-                  label: "Stage",
-                  val: tool.owner.fundingStage,
-                },
-                {
-                  icon: <Clock size={12} />,
-                  label: "Funding",
-                  val: tool.owner.totalFunding,
-                },
-              ].map(m => (
-                <div key={m.label}>
-                  <div
-                    className="flex items-center gap-1 text-xs mb-0.5"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {m.icon} {m.label}
-                  </div>
-                  <div
-                    className="text-xs font-medium"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    {m.val}
-                  </div>
-                </div>
-              ))}
-            </div>
+              {tool.owner.name}
+            </h3>
+            {tool.owner.description && (
+              <p
+                className="text-sm mb-4"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                {tool.owner.description}
+              </p>
+            )}
+            {tool.owner.website && tool.owner.website !== "#" && (
+              <a
+                href={tool.owner.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
+                style={{ color: "var(--primary)" }}
+              >
+                Visit website <ExternalLink size={11} />
+              </a>
+            )}
           </div>
         </div>
       </div>
@@ -632,7 +607,7 @@ function OverviewTab({
   );
 }
 
-/* ─── Reviews Tab ─────────────────────────────────────────────────── */
+/* ─── Reviews Tab — fetches from API ──────────────────────────────── */
 function ReviewsTab({
   tool,
   voteHelpful,
@@ -640,10 +615,12 @@ function ReviewsTab({
   tool: NonNullable<ReturnType<typeof useTool>["tool"]>;
   voteHelpful: (id: string) => void;
 }) {
-  const avgRating = tool.rating;
+  // Fetch real reviews from API using the tool's _id
+  const { reviews, loading: reviewsLoading } = useReviews(tool.id);
+
   return (
     <div className="flex flex-col lg:flex-row gap-8">
-      {/* Left stats */}
+      {/* Sidebar stats */}
       <div className="lg:w-72 shrink-0">
         <div className="card p-6 sticky top-24">
           <h2
@@ -657,48 +634,56 @@ function ReviewsTab({
               className="font-display text-5xl"
               style={{ color: "var(--text-primary)" }}
             >
-              {avgRating}
+              {tool.rating > 0 ? tool.rating.toFixed(1) : "—"}
             </span>
-            <div className="mb-1">
-              <StarRating value={avgRating} size={16} />
-              <p
-                className="text-xs mt-1"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {tool.reviewCount.toLocaleString()} verified reviews
-              </p>
-            </div>
+            {tool.rating > 0 && (
+              <div className="mb-1">
+                <StarRating value={tool.rating} size={16} />
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {tool.reviewCount.toLocaleString()} verified reviews
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-3 mb-6">
-            {Object.entries(tool.ratingBreakdown).map(([key, val]) => (
-              <div key={key}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span style={{ color: "var(--text-secondary)" }}>
-                    {key
-                      .replace(/([A-Z])/g, " $1")
-                      .replace(/^./, s => s.toUpperCase())}
-                  </span>
-                  <span style={{ color: "var(--primary-bright)" }}>{val}</span>
-                </div>
-                <div
-                  className="h-1 rounded-full"
-                  style={{ background: "var(--bg-card-hover)" }}
-                >
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${(val / 5) * 100}%`,
-                      background: "var(--primary)",
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          {Object.values(tool.ratingBreakdown).some(v => v > 0) && (
+            <div className="space-y-3 mb-6">
+              {Object.entries(tool.ratingBreakdown)
+                .filter(([, val]) => val > 0)
+                .map(([key, val]) => (
+                  <div key={key}>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {key
+                          .replace(/([A-Z])/g, " $1")
+                          .replace(/^./, s => s.toUpperCase())}
+                      </span>
+                      <span style={{ color: "var(--primary-bright)" }}>
+                        {val.toFixed(1)}
+                      </span>
+                    </div>
+                    <div
+                      className="h-1 rounded-full"
+                      style={{ background: "var(--bg-card-hover)" }}
+                    >
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${(val / 5) * 100}%`,
+                          background: "var(--primary)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
 
           <Link
-            href={`/write-review?tool=${tool.id}`}
+            href={`/write-review?tool=${tool.id}&slug=${tool.slug}`}
             className="btn-primary w-full text-sm py-2.5 text-center block"
           >
             Write a Review
@@ -712,9 +697,19 @@ function ReviewsTab({
         </div>
       </div>
 
-      {/* Right reviews */}
+      {/* Reviews list */}
       <div className="flex-1 space-y-5">
-        {tool.reviews.length === 0 ? (
+        {reviewsLoading && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2
+              size={24}
+              className="animate-spin"
+              style={{ color: "var(--primary)" }}
+            />
+          </div>
+        )}
+
+        {!reviewsLoading && reviews.length === 0 && (
           <div className="card p-10 text-center">
             <div className="text-4xl mb-3">✍️</div>
             <h3
@@ -730,14 +725,16 @@ function ReviewsTab({
               Be the first to share your experience with {tool.name}
             </p>
             <Link
-              href={`/write-review?tool=${tool.id}`}
+              href={`/write-review?tool=${tool.id}&slug=${tool.slug}`}
               className="btn-primary text-sm px-6 py-2.5"
             >
               Write the First Review
             </Link>
           </div>
-        ) : (
-          tool.reviews.map(review => (
+        )}
+
+        {!reviewsLoading &&
+          reviews.map(review => (
             <div key={review.id} className="card p-6">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="flex items-center gap-3">
@@ -758,19 +755,13 @@ function ReviewsTab({
                       className="text-xs"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      {review.useCase} · {review.date}
+                      {review.useCase.replace(/_/g, " ")} · {review.date}
                     </p>
                   </div>
                 </div>
                 <StarRating value={review.rating} size={14} />
               </div>
 
-              <h4
-                className="font-semibold text-base mb-2"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {review.title}
-              </h4>
               <p
                 className="text-sm leading-relaxed mb-4"
                 style={{ color: "var(--text-secondary)" }}
@@ -778,48 +769,58 @@ function ReviewsTab({
                 {review.body}
               </p>
 
-              <div className="grid grid-cols-2 gap-4 mb-5">
-                <div>
-                  <p
-                    className="text-xs font-semibold uppercase tracking-widest mb-2"
-                    style={{ color: "var(--accent-green)" }}
-                  >
-                    Pros
-                  </p>
-                  <ul className="space-y-1">
-                    {review.pros.map(p => (
-                      <li
-                        key={p}
-                        className="text-xs flex items-start gap-1.5"
-                        style={{ color: "var(--text-secondary)" }}
+              {(review.pros.length > 0 || review.cons.length > 0) && (
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                  {review.pros.length > 0 && (
+                    <div>
+                      <p
+                        className="text-xs font-semibold uppercase tracking-widest mb-2"
+                        style={{ color: "var(--accent-green)" }}
                       >
-                        <span style={{ color: "var(--accent-green)" }}>+</span>{" "}
-                        {p}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p
-                    className="text-xs font-semibold uppercase tracking-widest mb-2"
-                    style={{ color: "var(--accent-red)" }}
-                  >
-                    Cons
-                  </p>
-                  <ul className="space-y-1">
-                    {review.cons.map(c => (
-                      <li
-                        key={c}
-                        className="text-xs flex items-start gap-1.5"
-                        style={{ color: "var(--text-secondary)" }}
+                        Pros
+                      </p>
+                      <ul className="space-y-1">
+                        {review.pros.map((p, i) => (
+                          <li
+                            key={i}
+                            className="text-xs flex items-start gap-1.5"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            <span style={{ color: "var(--accent-green)" }}>
+                              +
+                            </span>{" "}
+                            {p}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {review.cons.length > 0 && (
+                    <div>
+                      <p
+                        className="text-xs font-semibold uppercase tracking-widest mb-2"
+                        style={{ color: "var(--accent-red)" }}
                       >
-                        <span style={{ color: "var(--accent-red)" }}>−</span>{" "}
-                        {c}
-                      </li>
-                    ))}
-                  </ul>
+                        Cons
+                      </p>
+                      <ul className="space-y-1">
+                        {review.cons.map((c, i) => (
+                          <li
+                            key={i}
+                            className="text-xs flex items-start gap-1.5"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            <span style={{ color: "var(--accent-red)" }}>
+                              −
+                            </span>{" "}
+                            {c}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
               <div
                 className="flex items-center gap-4 pt-4"
@@ -839,41 +840,14 @@ function ReviewsTab({
                   <Share2 size={13} /> Share
                 </button>
               </div>
-
-              {review.ownerResponse && (
-                <div
-                  className="mt-5 ml-4 pl-4 py-4 pr-4 rounded-xl"
-                  style={{
-                    background: "rgba(167,139,250,0.06)",
-                    borderLeft: "2px solid var(--primary-dim)",
-                  }}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Shield size={12} style={{ color: "var(--primary)" }} />
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: "var(--primary-bright)" }}
-                    >
-                      {tool.owner.name} (Provider)
-                    </span>
-                  </div>
-                  <p
-                    className="text-xs leading-relaxed"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    {review.ownerResponse}
-                  </p>
-                </div>
-              )}
             </div>
-          ))
-        )}
+          ))}
       </div>
     </div>
   );
 }
 
-/* ─── API Tab ──────────────────────────────────────────────────────── */
+/* ─── API Tab ─────────────────────────────────────────────────────── */
 function ApiTab({
   tool,
 }: {
@@ -884,7 +858,7 @@ function ApiTab({
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const message = await client.messages.create({
-  model: "${tool.slug.includes("claude") ? "claude-opus-4-6" : "gpt-4o"}",
+  model: "${tool.slug.includes("claude") ? "claude-sonnet-4-6" : "gpt-4o"}",
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hello!" }],
 });
@@ -905,14 +879,16 @@ console.log(message.content);`;
           {tool.name} does not currently offer a public API. Check their website
           for updates.
         </p>
-        <a
-          href={tool.website}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-secondary text-sm mt-5 inline-flex items-center gap-2"
-        >
-          Visit Website <ExternalLink size={13} />
-        </a>
+        {tool.website && tool.website !== "#" && (
+          <a
+            href={tool.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary text-sm mt-5 inline-flex items-center gap-2"
+          >
+            Visit Website <ExternalLink size={13} />
+          </a>
+        )}
       </div>
     );
   }
@@ -949,6 +925,7 @@ console.log(message.content);`;
             <button
               className="text-xs transition-opacity hover:opacity-70"
               style={{ color: "var(--primary)" }}
+              onClick={() => navigator.clipboard.writeText(CODE_EXAMPLE)}
             >
               Copy
             </button>

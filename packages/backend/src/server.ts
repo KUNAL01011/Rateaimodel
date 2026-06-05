@@ -1,8 +1,8 @@
 import http from "http";
-import {connectDB, disconnectDB, myEnvironment } from "@/configs";
-import {startKeepAliveCron, stopKeepAliveCron} from "@/crons";
+import { connectDB, disconnectDB, myEnvironment } from "@/configs";
+import { startKeepAliveCron, stopKeepAliveCron } from "@/crons";
 import app from "./app";
-import {logger} from "./utils";
+import { logger } from "./utils";
 
 const PORT = myEnvironment.PORT || 8080;
 
@@ -13,15 +13,13 @@ const startServer = async () => {
     await connectDB();
     server.listen(PORT, () => {
       logger.info(`Server running on port: ${myEnvironment.PORT}`);
-      logger.info(
-        `Health check: ${myEnvironment.FRONTEND_URL}/health`
-      )
+      logger.info(`Health check: ${myEnvironment.FRONTEND_URL}/health`);
 
       startKeepAliveCron();
     });
   } catch (error) {
     logger.error("Failed to start server", error);
-    process.exit(1)
+    process.exit(1);
   }
 };
 
@@ -29,14 +27,19 @@ startServer();
 
 let isShuttingDown = false;
 
-const shutdown = async (signal:string) => {
+const shutdown = async (signal: string) => {
   if (isShuttingDown) return;
   isShuttingDown = true;
 
-  logger.info(`\n${signal} received. Starting graceful shutdown...`)
+  logger.info(`\n${signal} received. Starting graceful shutdown...`);
+
+  const forceExit = setTimeout(() => {
+    logger.error("Graceful shutdown timed out. Forcing exit.");
+    process.exit(1);
+  }, 10_000);
+  forceExit.unref();
 
   try {
-    
     await new Promise<void>(resolve => {
       server.close(() => {
         logger.info("HTTP server closed");
@@ -57,4 +60,4 @@ const shutdown = async (signal:string) => {
 };
 
 process.on("SIGINT", shutdown);
-process.on("SIGTERN", shutdown);
+process.on("SIGTERM", shutdown);

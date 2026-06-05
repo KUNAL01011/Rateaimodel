@@ -35,11 +35,32 @@ router.delete("/me", authenticate, deleteAccount);
 /* ─── Saved tools ──────────────────────────────────────────────────── */
 router.get("/me/saved", authenticate, getSavedTools);
 router.post("/me/saved/:toolId", authenticate, toggleSavedTool);
-router.delete("/me/saved/:toolId", authenticate, toggleSavedTool); // same handler toggles
+router.delete("/me/saved/:toolId", authenticate, toggleSavedTool);
 router.get("/me/saved/:toolId/check", authenticate, checkSavedTool);
 
 /* ─── Admin: Platform stats ────────────────────────────────────────── */
 router.get("/admin/stats", authenticate, authorize("admin"), getPlatformStats);
+
+/* ─── Admin: Tool submissions ──────────────────────────────────────── */
+// IMPORTANT: These MUST come before /admin/:userId to avoid route conflicts
+router.get(
+  "/admin/submissions",
+  authenticate,
+  authorize("admin"),
+  getAllSubmissions
+);
+router.get(
+  "/admin/submissions/:id",
+  authenticate,
+  authorize("admin"),
+  getSubmissionById
+);
+router.post(
+  "/admin/submissions/:id/review",
+  authenticate,
+  authorize("admin"),
+  reviewSubmission
+);
 
 /* ─── Admin: User management ───────────────────────────────────────── */
 router.get(
@@ -62,26 +83,6 @@ router.delete(
   authenticate,
   authorize("admin"),
   deleteUserAdmin
-);
-
-/* ─── Admin: Tool submissions ──────────────────────────────────────── */
-router.get(
-  "/admin/submissions",
-  authenticate,
-  authorize("admin"),
-  getAllSubmissions
-);
-router.get(
-  "/admin/submissions/:id",
-  authenticate,
-  authorize("admin"),
-  getSubmissionById
-);
-router.post(
-  "/admin/submissions/:id/review",
-  authenticate,
-  authorize("admin"),
-  reviewSubmission
 );
 
 /* ─── Public profiles ──────────────────────────────────────────────── */

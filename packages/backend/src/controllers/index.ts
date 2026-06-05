@@ -1,4 +1,4 @@
-export { googleLogin, getMe, logout, refresh } from "./auth.controller";
+export { googleLogin, getMe, logout, refresh, login } from "./auth.controller";
 export {
   getTools,
   getToolBySlug,

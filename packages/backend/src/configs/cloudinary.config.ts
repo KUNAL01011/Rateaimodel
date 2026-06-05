@@ -13,34 +13,36 @@ cloudinary.config({
 export const extractPublicIdFromUrl = (url: string): string | null => {
   try {
     if (!url) return null;
-
     const match = url.match(
       /\/(?:image|video|raw)\/upload\/(?:v\d+\/)?(.+)\.[^.]+$/
     );
-
-    if (match && match[1]) {
-      return match[1];
-    }
-
-    return null;
+    return match?.[1] ?? null;
   } catch (error) {
     logger.error("Error extracting public_id from URL:", error);
     return null;
   }
 };
 
-export const deleteLocalFile = (filePath:string):void => {
+export const deleteLocalFile = (filePath: string): void => {
   try {
-    if (fs.existsSync(filePath)){
+    if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
   } catch (error) {
-    logger.warn("failed to delete local file:", error);
+    logger.warn("Failed to delete local file:", error);
   }
-}
+};
 
+/**
+ * Upload a file to Cloudinary.
+ *
+ * @param filePath - Absolute path OR a path relative to <cwd>/public/image.
+ *   When called from createToolListingRequest, multer already gives us an
+ *   absolute path (req.file.path), so we use it directly.
+ * @param folder   - Cloudinary destination folder (default: "uploads")
+ */
 export const uploadImage = async (
-  imagePath: string,
+  filePath: string,
   folder?: string
 ): Promise<{
   url: string;
@@ -50,15 +52,24 @@ export const uploadImage = async (
   height: number;
 }> => {
   try {
-    const baseDir = path.resolve(process.cwd(), "public", "image");
+    // Resolve to absolute path
+    let fullPath: string;
 
-    const fullPath = path.resolve(baseDir, imagePath);
+    if (path.isAbsolute(filePath)) {
+      // Already absolute (e.g. from multer diskStorage)
+      fullPath = filePath;
+    } else {
+      // Legacy relative usage: resolve against public/image
+      const baseDir = path.resolve(process.cwd(), "public", "image");
+      fullPath = path.resolve(baseDir, filePath);
 
-    if (fullPath !== baseDir && !fullPath.startsWith(baseDir + path.sep)) {
-      throw new ApiError(
-        400,
-        `Security Error: Path traversal attempt detected for path: ${imagePath}`
-      );
+      // Path traversal guard
+      if (!fullPath.startsWith(baseDir + path.sep) && fullPath !== baseDir) {
+        throw new ApiError(
+          400,
+          `Security Error: Path traversal attempt detected for path: ${filePath}`
+        );
+      }
     }
 
     if (!fs.existsSync(fullPath)) {
@@ -86,23 +97,23 @@ export const uploadImage = async (
 
 export const deleteImage = async (
   publicId: string
-): Promise<{result:string}> => {
+): Promise<{ result: string }> => {
   try {
     if (!publicId) {
-      throw new ApiError(400, "Public Id is required for deletion");
+      throw new ApiError(400, "Public ID is required for deletion");
     }
 
     const result = await cloudinary.uploader.destroy(publicId, {
-      resource_type: "image"
+      resource_type: "image",
     });
 
     if (result.result !== "ok") {
-      throw new ApiError(404, `failed to delete image: ${result.result}`);
+      throw new ApiError(404, `Failed to delete image: ${result.result}`);
     }
 
-    return {result: result.result};
+    return { result: result.result };
   } catch (error) {
     logger.error("Error deleting image from Cloudinary: ", error);
     throw error;
   }
-}
+};

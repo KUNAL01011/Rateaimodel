@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import mongoose, { Document, Schema } from "mongoose";
 
 export type UserRole = "user" | "owner" | "admin";
@@ -10,6 +11,7 @@ export interface IUser extends Document {
   bio?: string;
   role: UserRole;
   emailVerified: boolean;
+  password?: string;
 
   googleId?: string;
 
@@ -32,6 +34,7 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
     username: { type: String, required: true, unique: true, index: true },
+    password: { type: String },
     displayName: { type: String },
     avatarUrl: { type: String },
     bio: { type: String },
@@ -53,5 +56,15 @@ const UserSchema = new Schema<IUser>(
     timestamps: true,
   }
 );
+
+UserSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+
+  if (!this.password) {
+    throw new Error("Password is required");
+  }
+
+  this.password = await bcrypt.hash(this.password, 10);
+});
 
 export const User = mongoose.model<IUser>("User", UserSchema);

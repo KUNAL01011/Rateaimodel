@@ -9,10 +9,11 @@ import {
   reviewsApi,
   savedApi,
   recommendApi,
+  adminApi,
   BackendTool,
   BackendCategory,
   BackendReview,
-  AuthUser,
+  AuthUser as ApiAuthUser,
   CreateReviewPayload,
 } from "./api";
 import {
@@ -21,7 +22,7 @@ import {
 } from "./firebase";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Generic async state types
+// Generic async state
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AsyncStatus = "idle" | "loading" | "success" | "error";
@@ -93,10 +94,10 @@ function adaptTool(t: BackendTool): AITool {
     rating: t.ratingOverall ?? 0,
     reviewCount: t.reviewsCount ?? 0,
     ratingBreakdown: {
-      accuracy: 0,
-      speed: 0,
-      costValue: 0,
-      easeOfUse: 0,
+      accuracy: (t as any).ratingAccuracy ?? 0,
+      speed: (t as any).ratingSpeed ?? 0,
+      costValue: (t as any).ratingCostValue ?? 0,
+      easeOfUse: (t as any).ratingEaseOfUse ?? 0,
       reliability: 0,
     },
     modalities: [],
@@ -181,8 +182,23 @@ function mapPricingType(t: string): any {
   return map[t] ?? "Freemium";
 }
 
+// Maps frontend display labels → backend enum values
+// Must match USE_CASES in packages/backend/src/models/enums.ts
+export const USE_CASE_DISPLAY_TO_ENUM: Record<string, string> = {
+  "Coding & Development": "coding_general",
+  "Content Writing": "copywriting",
+  "Research & Analysis": "academic_research",
+  "Image/Video Creation": "image_generation",
+  "Data Processing": "data_analysis",
+  "Customer Support": "customer_support_bot",
+  "Personal Productivity": "personal_assistant",
+  Education: "study_and_learning",
+  Marketing: "seo_content",
+  Other: "brainstorming",
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Auth context (singleton across the app)
+// Auth — module-level singleton so all consumers share state
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AuthUser {
@@ -195,9 +211,6 @@ export interface AuthUser {
 
 type AuthState = AsyncState<AuthUser | null>;
 
-const authReducer = createAsyncReducer<AuthUser | null>(null);
-
-// Module-level so all useAuth() consumers share state without a context provider
 let _authState: AuthState = { data: null, status: "idle", error: null };
 const _authListeners = new Set<() => void>();
 
@@ -216,7 +229,6 @@ export function useAuth() {
     };
   }, []);
 
-  // Hydrate on first mount across all consumers
   useEffect(() => {
     if (_authState.status !== "idle") return;
     setAuthState({ ..._authState, status: "loading" });
@@ -277,6 +289,116 @@ export function useAuth() {
     error: _authState.error,
     signInWithGoogle,
     signOut,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Saved Tools — module-level singleton to prevent N API calls per page
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SavedState = {
+  ids: Set<string>;
+  status: "idle" | "loading" | "ready";
+  error: string | null;
+};
+
+let _savedState: SavedState = { ids: new Set(), status: "idle", error: null };
+const _savedListeners = new Set<() => void>();
+const _pendingToggles = new Set<string>();
+
+function setSavedState(state: SavedState) {
+  _savedState = state;
+  _savedListeners.forEach(fn => fn());
+}
+
+// Initialise saved state once when a user is available
+async function initSaved() {
+  if (_savedState.status !== "idle") return;
+  setSavedState({ ..._savedState, status: "loading" });
+  try {
+    const tools = await savedApi.getAll();
+    const ids = new Set<string>(tools.map((t: any) => t._id ?? t.id));
+    setSavedState({ ids, status: "ready", error: null });
+  } catch (err: any) {
+    setSavedState({
+      ..._savedState,
+      status: "idle", // allow retry
+      error: err?.message ?? "Failed to load saved tools",
+    });
+  }
+}
+
+export function useSavedTools() {
+  const { user } = useAuth();
+  const [, rerender] = useReducer(x => x + 1, 0);
+
+  useEffect(() => {
+    _savedListeners.add(rerender);
+    return () => {
+      _savedListeners.delete(rerender);
+    };
+  }, []);
+
+  // Kick off load once when user becomes available
+  useEffect(() => {
+    if (!user) {
+      // Reset when user logs out
+      if (_savedState.status !== "idle") {
+        setSavedState({ ids: new Set(), status: "idle", error: null });
+      }
+      return;
+    }
+    initSaved();
+  }, [user]);
+
+  const toggleSave = useCallback(
+    async (toolId: string) => {
+      if (!user) return;
+      if (_pendingToggles.has(toolId)) return;
+      _pendingToggles.add(toolId);
+
+      // Optimistic update
+      const next = new Set(_savedState.ids);
+      const wasIn = next.has(toolId);
+      if (wasIn) next.delete(toolId);
+      else next.add(toolId);
+      setSavedState({ ..._savedState, ids: next });
+
+      try {
+        const res = await savedApi.toggle(toolId);
+        const reconciled = new Set(_savedState.ids);
+        if (res.saved) reconciled.add(toolId);
+        else reconciled.delete(toolId);
+        setSavedState({ ..._savedState, ids: reconciled });
+      } catch (err: any) {
+        // Revert
+        const reverted = new Set(_savedState.ids);
+        if (wasIn) reverted.add(toolId);
+        else reverted.delete(toolId);
+        setSavedState({
+          ..._savedState,
+          ids: reverted,
+          error: err?.message ?? "Failed to update saved tools",
+        });
+      } finally {
+        _pendingToggles.delete(toolId);
+      }
+    },
+    [user]
+  );
+
+  const isSaved = useCallback(
+    (toolId: string) => _savedState.ids.has(toolId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [_savedState.ids]
+  );
+
+  return {
+    savedIds: _savedState.ids,
+    toggleSave,
+    isSaved,
+    loading: _savedState.status === "loading",
+    error: _savedState.error,
   };
 }
 
@@ -492,7 +614,6 @@ export function useSearch(initialQuery = "") {
         return;
       }
 
-      // Cancel in-flight request
       abortRef.current?.abort();
       abortRef.current = new AbortController();
 
@@ -501,8 +622,6 @@ export function useSearch(initialQuery = "") {
         .search(q, page, limit)
         .then(res => {
           let list = res.data.map(adaptTool);
-
-          // Client-side filter pass
           const f = filters ?? appliedFilters;
           if (f.types?.length)
             list = list.filter(t => f.types!.includes(t.type));
@@ -513,7 +632,6 @@ export function useSearch(initialQuery = "") {
             list = list.filter(t => t.isOpenSource === f.isOpenSource);
           if (f.minRating != null)
             list = list.filter(t => t.rating >= (f.minRating ?? 0));
-
           dispatch({ type: "SUCCESS", payload: list });
         })
         .catch((err: any) => {
@@ -525,7 +643,6 @@ export function useSearch(initialQuery = "") {
     []
   );
 
-  // Cleanup on unmount
   useEffect(() => () => abortRef.current?.abort(), []);
 
   return {
@@ -591,7 +708,7 @@ export function useCategories() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Reviews
+// Reviews — fetched from API
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function useReviews(toolId: string, page = 1, limit = 20) {
@@ -645,7 +762,7 @@ interface SubmitReviewInput {
   body: string;
   pros: string[];
   cons: string[];
-  useCase: string;
+  useCase: string; // frontend display label — gets mapped to enum
   ratingBreakdown: {
     accuracy: number;
     speed: number;
@@ -665,9 +782,13 @@ export function useSubmitReview() {
     setError(null);
     setSuccess(false);
     try {
+      // Map display label → backend enum value
+      const useCaseEnum =
+        USE_CASE_DISPLAY_TO_ENUM[data.useCase] ?? "brainstorming";
+
       const payload: CreateReviewPayload = {
         toolId: data.toolId,
-        useCase: data.useCase,
+        useCase: useCaseEnum,
         ratingOverall: data.rating,
         ratingAccuracy: data.ratingBreakdown.accuracy || undefined,
         ratingSpeed: data.ratingBreakdown.speed || undefined,
@@ -707,12 +828,11 @@ export function useHelpfulVote() {
 
   const voteHelpful = useCallback(
     async (reviewId: string) => {
-      if (votedIds.has(reviewId)) return; // idempotent guard
+      if (votedIds.has(reviewId)) return;
       setVotedIds(prev => new Set(prev).add(reviewId));
       try {
         await reviewsApi.vote(reviewId, "up");
       } catch {
-        // Revert optimistic update on failure
         setVotedIds(prev => {
           const next = new Set(prev);
           next.delete(reviewId);
@@ -724,82 +844,6 @@ export function useHelpfulVote() {
   );
 
   return { voteHelpful, votedIds };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Saved Tools
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function useSavedTools() {
-  const { user } = useAuth();
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Track in-flight toggles to prevent double-click races
-  const pendingRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!user) {
-      setSavedIds(new Set());
-      return;
-    }
-    setLoading(true);
-    savedApi
-      .getAll()
-      .then(tools => {
-        setSavedIds(new Set(tools.map((t: any) => t._id ?? t.id)));
-      })
-      .catch((err: any) =>
-        setError(err?.message ?? "Failed to load saved tools")
-      )
-      .finally(() => setLoading(false));
-  }, [user]);
-
-  const toggleSave = useCallback(
-    async (toolId: string) => {
-      if (!user) return;
-      if (pendingRef.current.has(toolId)) return; // debounce race
-      pendingRef.current.add(toolId);
-
-      // Optimistic update
-      setSavedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(toolId)) next.delete(toolId);
-        else next.add(toolId);
-        return next;
-      });
-
-      try {
-        const res = await savedApi.toggle(toolId);
-        // Reconcile with server truth
-        setSavedIds(prev => {
-          const next = new Set(prev);
-          if (res.saved) next.add(toolId);
-          else next.delete(toolId);
-          return next;
-        });
-      } catch (err: any) {
-        // Revert on failure
-        setSavedIds(prev => {
-          const next = new Set(prev);
-          if (next.has(toolId)) next.delete(toolId);
-          else next.add(toolId);
-          return next;
-        });
-        setError(err?.message ?? "Failed to update saved tools");
-      } finally {
-        pendingRef.current.delete(toolId);
-      }
-    },
-    [user]
-  );
-
-  const isSaved = useCallback(
-    (toolId: string) => savedIds.has(toolId),
-    [savedIds]
-  );
-
-  return { savedIds, toggleSave, isSaved, loading, error };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -906,7 +950,7 @@ export function useAIRecommendation() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Admin hooks
+// Admin hooks — use imported adminApi, not require()
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function useAdminStats() {
@@ -920,8 +964,6 @@ export function useAdminStats() {
     } | null>(null),
     { data: null, status: "idle", error: null }
   );
-
-  const { adminApi } = require("./api");
 
   useEffect(() => {
     dispatch({ type: "LOADING" });
@@ -950,7 +992,6 @@ export function useAdminSubmissions(page = 1, limit = 20) {
     error: null,
   });
   const [totalPages, setTotalPages] = useState(1);
-  const { adminApi } = require("./api");
 
   useEffect(() => {
     let cancelled = false;
@@ -997,19 +1038,17 @@ export function useAdminSubmissions(page = 1, limit = 20) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pagination helper hook
+// Pagination helper
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function usePagination(totalPages: number, initialPage = 1) {
   const [page, setPage] = useState(initialPage);
-
   const goTo = useCallback(
     (p: number) => setPage(Math.max(1, Math.min(p, totalPages))),
     [totalPages]
   );
   const next = useCallback(() => goTo(page + 1), [goTo, page]);
   const prev = useCallback(() => goTo(page - 1), [goTo, page]);
-
   return {
     page,
     goTo,
@@ -1021,7 +1060,7 @@ export function usePagination(totalPages: number, initialPage = 1) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Debounce helper hook
+// Debounce
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function useDebounce<T>(value: T, delay: number): T {
