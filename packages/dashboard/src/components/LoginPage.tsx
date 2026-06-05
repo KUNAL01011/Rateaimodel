@@ -1,25 +1,14 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth-context";
+import { authApi } from "../lib/api";
 import { Spinner } from "./ui";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// The backend only supports Google/Firebase OAuth. For the admin dashboard,
-// we provide a dev-friendly login that:
-//   1. Accepts email + password fields (UI/UX requirement)
-//   2. Attempts to authenticate via the /auth/me cookie check
-//   3. If the user already has a valid session cookie, auto-logs them in
-//   4. Provides a clear link to log in via the main app first
-// This is the correct pattern for an internal admin dashboard where the
-// actual OAuth flow happens in the main frontend app.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function LoginPage() {
-  const { refresh } = useAuth();
+  const { refresh, setUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checked, setChecked] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,19 +19,25 @@ export function LoginPage() {
     setError(null);
     setLoading(true);
 
-    // The dashboard uses cookie-based auth. The actual auth flow is:
-    // User logs in on the main app → gets httpOnly accessToken cookie →
-    // dashboard reads that cookie automatically.
-    // Here we just try to refresh the session (check if cookie exists).
     try {
+      // POST /api/v1/auth/login — sets httpOnly accessToken cookie + returns user
+      const result = await authApi.login(email, password);
+      // Refresh auth context so App sees "authenticated"
+      setUser(result.user);
       await refresh();
-    } catch {
-      setError(
-        "Authentication failed. Please log in to the main app first, then return here."
-      );
+    } catch (err: any) {
+      const msg: string = err?.message ?? "Login failed";
+      if (msg.toLowerCase().includes("admin")) {
+        setError(
+          "Access denied — this account does not have admin privileges."
+        );
+      } else if (err?.status === 401) {
+        setError("Incorrect email or password.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
-      setChecked(true);
     }
   };
 
@@ -134,7 +129,7 @@ export function LoginPage() {
               fontFamily: "'IBM Plex Mono', monospace",
             }}
           >
-            Enter your admin credentials to access the dashboard.
+            Sign in with your admin credentials.
           </p>
 
           <form
@@ -161,6 +156,7 @@ export function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="admin@rateai.com"
                 autoComplete="email"
+                autoFocus
                 style={{
                   width: "100%",
                   padding: "10px 14px",
@@ -239,21 +235,6 @@ export function LoginPage() {
               </div>
             )}
 
-            {checked && !error && (
-              <div
-                style={{
-                  padding: "10px 14px",
-                  background: "rgba(34,197,94,.08)",
-                  border: "1px solid rgba(34,197,94,.18)",
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: "#4ade80",
-                }}
-              >
-                ✓ Checking session...
-              </div>
-            )}
-
             <button
               type="submit"
               disabled={loading}
@@ -279,16 +260,17 @@ export function LoginPage() {
               }}
               onMouseEnter={e => {
                 if (!loading)
-                  (e.target as HTMLElement).style.filter = "brightness(1.1)";
+                  (e.currentTarget as HTMLElement).style.filter =
+                    "brightness(1.1)";
               }}
               onMouseLeave={e => {
-                (e.target as HTMLElement).style.filter = "none";
+                (e.currentTarget as HTMLElement).style.filter = "none";
               }}
             >
               {loading ? (
                 <>
                   <Spinner size={14} />
-                  Authenticating...
+                  Signing in...
                 </>
               ) : (
                 "Sign In →"
@@ -311,8 +293,9 @@ export function LoginPage() {
                 fontFamily: "'IBM Plex Mono', monospace",
               }}
             >
-              This dashboard uses session cookies from the main app. If login
-              fails, authenticate via{" "}
+              Admin accounts require{" "}
+              <code style={{ color: "#4b5c6b" }}>role: "admin"</code> in the
+              database. For Google OAuth users, log in via{" "}
               <a
                 href="http://localhost:3000"
                 target="_blank"
@@ -321,7 +304,7 @@ export function LoginPage() {
               >
                 localhost:3000
               </a>{" "}
-              first as an admin user.
+              first, then return here.
             </p>
           </div>
         </div>

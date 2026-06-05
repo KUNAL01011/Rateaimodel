@@ -18,6 +18,8 @@ import {
   getAllSubmissions,
   getSubmissionById,
   reviewSubmission,
+  updateSubmission,
+  deleteSubmission,
 } from "@/controllers";
 import {
   updateProfileSchema,
@@ -60,6 +62,19 @@ router.post(
   authenticate,
   authorize("admin"),
   reviewSubmission
+);
+// ── NEW: edit & delete submission ──
+router.patch(
+  "/admin/submissions/:id",
+  authenticate,
+  authorize("admin"),
+  updateSubmission
+);
+router.delete(
+  "/admin/submissions/:id",
+  authenticate,
+  authorize("admin"),
+  deleteSubmission
 );
 
 /* ─── Admin: User management ───────────────────────────────────────── */

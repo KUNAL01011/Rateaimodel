@@ -321,3 +321,40 @@ export const reviewSubmission = asyncHandler(
     throw new ApiError(400, "Invalid action. Use 'approve' or 'reject'");
   }
 );
+
+export const deleteSubmission = asyncHandler(
+  async (req: Request, res: Response) => {
+    const submission = await ToolSubmission.findById(req.params.id);
+    if (!submission) throw new ApiError(404, "Submission not found");
+    await submission.deleteOne();
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Submission deleted"));
+  }
+);
+ 
+export const updateSubmission = asyncHandler(
+  async (req: Request, res: Response) => {
+    const submission = await ToolSubmission.findById(req.params.id);
+    if (!submission) throw new ApiError(404, "Submission not found");
+    if (submission.status !== "pending")
+      throw new ApiError(400, "Cannot edit a reviewed submission");
+ 
+    const allowed = [
+      "name","website","tagline","description","toolType",
+      "pricing","pricingDetails","modalities","hasApi","isOpenSource",
+      "ownerName","ownerEmail",
+    ] as const;
+ 
+    allowed.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        (submission as any)[field] = req.body[field];
+      }
+    });
+ 
+    await submission.save();
+    return res
+      .status(200)
+      .json(new ApiResponse(200, submission, "Submission updated"));
+  }
+);

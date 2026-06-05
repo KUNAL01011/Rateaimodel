@@ -3,27 +3,41 @@ import { Readable } from "stream";
 import { logger } from "@/utils";
 import { myEnvironment } from "@/configs";
 
-// Setup Google Auth using a Service Account
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: myEnvironment.GOOGLE_CLIENT_EMAIL,
-    private_key: myEnvironment.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-  },
-  scopes: ["https://www.googleapis.com/auth/drive.file"],
-});
+// Only initialise Google Auth if credentials are present.
+// This service is optional — missing creds means upload silently no-ops.
+function getDrive() {
+  const email = (myEnvironment as any).GOOGLE_CLIENT_EMAIL;
+  const key = (myEnvironment as any).GOOGLE_PRIVATE_KEY;
 
-const drive = google.drive({ version: "v3", auth });
+  if (!email || !key) {
+    logger.warn(
+      "drive.service: GOOGLE_CLIENT_EMAIL / GOOGLE_PRIVATE_KEY not set — Drive upload disabled"
+    );
+    return null;
+  }
+
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: email,
+      private_key: key.replace(/\\n/g, "\n"),
+    },
+    scopes: ["https://www.googleapis.com/auth/drive.file"],
+  });
+
+  return google.drive({ version: "v3", auth });
+}
 
 export const uploadSubmissionToDrive = async (
   fileName: string,
   content: string
-) => {
+): Promise<string | null> => {
+  const drive = getDrive();
+  if (!drive) return null;
+
   try {
     const fileMetadata = {
       name: `${fileName}.txt`,
       mimeType: "text/plain",
-      // Optional: Add a specific Folder ID here if you want it saved in a designated Drive folder
-      // parents: ['YOUR_DRIVE_FOLDER_ID']
     };
 
     const media = {
@@ -33,11 +47,11 @@ export const uploadSubmissionToDrive = async (
 
     const file = await drive.files.create({
       requestBody: fileMetadata,
-      media: media,
+      media,
       fields: "id",
     });
 
-    return file.data.id;
+    return file.data.id ?? null;
   } catch (error) {
     logger.error("Error uploading to Google Drive:", error);
     throw error;

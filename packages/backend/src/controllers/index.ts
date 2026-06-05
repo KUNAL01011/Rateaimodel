@@ -45,6 +45,8 @@ export {
   getAllSubmissions,
   getSubmissionById,
   reviewSubmission,
+  updateSubmission,
+  deleteSubmission,
 } from "./user.controller";
 export { search } from "./search.controller";
 export { categories, categoryDetail } from "./category.controller";

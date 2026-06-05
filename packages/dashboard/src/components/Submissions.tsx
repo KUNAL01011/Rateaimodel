@@ -11,6 +11,7 @@ import {
   Card,
   Modal,
   Input,
+  ToastContainer,
 } from "./ui";
 
 function statusVariant(
@@ -22,14 +23,350 @@ function statusVariant(
   return "default";
 }
 
+// ─── Edit Submission Modal ────────────────────────────────────────────────────
+function EditSubmissionModal({
+  item,
+  open,
+  onClose,
+  onSaved,
+}: {
+  item: Submission;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: item.name,
+    website: item.website,
+    tagline: item.tagline,
+    description: item.description,
+    toolType: item.toolType,
+    pricing: item.pricing,
+    pricingDetails: item.pricingDetails ?? "",
+    ownerName: item.ownerName,
+    ownerEmail: item.ownerEmail,
+    hasApi: item.hasApi,
+    isOpenSource: item.isOpenSource,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const set = (k: keyof typeof form) => (v: any) =>
+    setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    setErr(null);
+    try {
+      await submissionsApi.update(item._id, form);
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setErr(e?.message ?? "Update failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const TOOL_TYPE_OPTIONS = [
+    "LLM / Language Model",
+    "Image Generation",
+    "Video Generation",
+    "Audio / Music",
+    "Code Assistant",
+    "AI Agent",
+    "Chatbot / Bot",
+    "Workflow Automation",
+    "Data & Analytics",
+    "Multimodal",
+    "Other",
+  ];
+  const PRICING_OPTIONS = [
+    "Free",
+    "Freemium",
+    "Paid (Subscription)",
+    "Pay-as-you-go",
+    "Enterprise",
+    "Open Source",
+  ];
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`✏️ Edit Submission — ${item.name}`}
+      width={600}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
+        >
+          <Input
+            label="Tool Name"
+            value={form.name}
+            onChange={set("name")}
+            placeholder="My AI Tool"
+          />
+          <Input
+            label="Website"
+            value={form.website}
+            onChange={set("website")}
+            placeholder="https://..."
+          />
+        </div>
+        <Input
+          label="Tagline"
+          value={form.tagline}
+          onChange={set("tagline")}
+          placeholder="One-line description"
+        />
+        <div>
+          <label
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "#5b7083",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
+            Description
+          </label>
+          <textarea
+            value={form.description}
+            onChange={e => set("description")(e.target.value)}
+            rows={4}
+            style={{
+              width: "100%",
+              padding: "9px 13px",
+              background: "rgba(255,255,255,.03)",
+              border: "1px solid rgba(255,255,255,.08)",
+              borderRadius: 8,
+              color: "#e2e8f0",
+              fontSize: 13,
+              outline: "none",
+              resize: "vertical",
+              fontFamily: "inherit",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
+
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
+        >
+          <div>
+            <label
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#5b7083",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Tool Type
+            </label>
+            <select
+              value={form.toolType}
+              onChange={e => set("toolType")(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "9px 13px",
+                background: "rgba(255,255,255,.03)",
+                border: "1px solid rgba(255,255,255,.08)",
+                borderRadius: 8,
+                color: "#e2e8f0",
+                fontSize: 13,
+                outline: "none",
+                fontFamily: "inherit",
+              }}
+            >
+              {TOOL_TYPE_OPTIONS.map(t => (
+                <option key={t} value={t} style={{ background: "#0b1117" }}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#5b7083",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Pricing
+            </label>
+            <select
+              value={form.pricing}
+              onChange={e => set("pricing")(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "9px 13px",
+                background: "rgba(255,255,255,.03)",
+                border: "1px solid rgba(255,255,255,.08)",
+                borderRadius: 8,
+                color: "#e2e8f0",
+                fontSize: 13,
+                outline: "none",
+                fontFamily: "inherit",
+              }}
+            >
+              {PRICING_OPTIONS.map(p => (
+                <option key={p} value={p} style={{ background: "#0b1117" }}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <Input
+          label="Pricing Details"
+          value={form.pricingDetails}
+          onChange={set("pricingDetails")}
+          placeholder="e.g. Free up to 10k tokens/month"
+        />
+
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}
+        >
+          <Input
+            label="Owner Name"
+            value={form.ownerName}
+            onChange={set("ownerName")}
+          />
+          <Input
+            label="Owner Email"
+            value={form.ownerEmail}
+            onChange={set("ownerEmail")}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 24, padding: "4px 0" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontSize: 13,
+              color: "#9db4c4",
+            }}
+          >
+            <div
+              onClick={() => set("hasApi")(!form.hasApi)}
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 4,
+                border: `1.5px solid ${form.hasApi ? "#1d6bf3" : "rgba(255,255,255,.15)"}`,
+                background: form.hasApi ? "#1d6bf3" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "all .15s",
+              }}
+            >
+              {form.hasApi && (
+                <span style={{ color: "white", fontSize: 10 }}>✓</span>
+              )}
+            </div>
+            Has API
+          </label>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontSize: 13,
+              color: "#9db4c4",
+            }}
+          >
+            <div
+              onClick={() => set("isOpenSource")(!form.isOpenSource)}
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 4,
+                border: `1.5px solid ${form.isOpenSource ? "#1d6bf3" : "rgba(255,255,255,.15)"}`,
+                background: form.isOpenSource ? "#1d6bf3" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                transition: "all .15s",
+              }}
+            >
+              {form.isOpenSource && (
+                <span style={{ color: "white", fontSize: 10 }}>✓</span>
+              )}
+            </div>
+            Open Source
+          </label>
+        </div>
+
+        {err && (
+          <div
+            style={{
+              padding: "10px 14px",
+              background: "rgba(239,68,68,.08)",
+              border: "1px solid rgba(239,68,68,.2)",
+              borderRadius: 8,
+              fontSize: 12,
+              color: "#f87171",
+            }}
+          >
+            {err}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            paddingTop: 8,
+            borderTop: "1px solid rgba(255,255,255,.05)",
+          }}
+        >
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" loading={saving} onClick={handleSave}>
+            Save Changes
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Submission Card ──────────────────────────────────────────────────────────
 function SubmissionCard({
   item,
   onApprove,
   onReject,
+  onEdit,
+  onDelete,
 }: {
   item: Submission;
   onApprove: (item: Submission) => void;
   onReject: (item: Submission) => void;
+  onEdit: (item: Submission) => void;
+  onDelete: (item: Submission) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -228,26 +565,51 @@ function SubmissionCard({
             </div>
           )}
 
-          {item.status === "pending" && (
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <Button
-                variant="success"
-                size="sm"
-                onClick={() => onApprove(item)}
-              >
-                ✓ Approve
+          {/* Action row */}
+          <div
+            style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}
+          >
+            {item.status === "pending" && (
+              <>
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={() => onApprove(item)}
+                >
+                  ✓ Approve
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => onReject(item)}
+                >
+                  ✗ Reject
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onEdit(item)}
+                >
+                  ✏️ Edit
+                </Button>
+              </>
+            )}
+            {item.status !== "pending" && (
+              <Button variant="outline" size="sm" onClick={() => onEdit(item)}>
+                ✏️ View/Edit
               </Button>
-              <Button variant="danger" size="sm" onClick={() => onReject(item)}>
-                ✗ Reject
-              </Button>
-            </div>
-          )}
+            )}
+            <Button variant="danger" size="sm" onClick={() => onDelete(item)}>
+              🗑️ Delete
+            </Button>
+          </div>
         </div>
       )}
     </Card>
   );
 }
 
+// ─── Main Submissions Component ───────────────────────────────────────────────
 export function Submissions({
   onStatsRefresh,
 }: {
@@ -256,6 +618,8 @@ export function Submissions({
   const [filter, setFilter] = useState("pending");
   const [approveTarget, setApproveTarget] = useState<Submission | null>(null);
   const [rejectTarget, setRejectTarget] = useState<Submission | null>(null);
+  const [editTarget, setEditTarget] = useState<Submission | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Submission | null>(null);
   const [adminNote, setAdminNote] = useState("");
   const [slug, setSlug] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -285,8 +649,8 @@ export function Submissions({
       setSlug("");
       refetch();
       onStatsRefresh();
-    } catch (e) {
-      addToast(e instanceof Error ? e.message : "Approval failed", "error");
+    } catch (e: any) {
+      addToast(e?.message ?? "Approval failed", "error");
     } finally {
       setActionLoading(false);
     }
@@ -297,63 +661,39 @@ export function Submissions({
     setActionLoading(true);
     try {
       await submissionsApi.reject(rejectTarget._id, adminNote);
-      addToast(`Submission rejected`, "info");
+      addToast("Submission rejected", "info");
       setRejectTarget(null);
       setAdminNote("");
       refetch();
       onStatsRefresh();
-    } catch (e) {
-      addToast(e instanceof Error ? e.message : "Rejection failed", "error");
+    } catch (e: any) {
+      addToast(e?.message ?? "Rejection failed", "error");
     } finally {
       setActionLoading(false);
     }
   }, [rejectTarget, adminNote, addToast, refetch, onStatsRefresh]);
 
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setActionLoading(true);
+    try {
+      await submissionsApi.delete(deleteTarget._id);
+      addToast(`Submission deleted`, "success");
+      setDeleteTarget(null);
+      refetch();
+      onStatsRefresh();
+    } catch (e: any) {
+      addToast(e?.message ?? "Delete failed", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  }, [deleteTarget, addToast, refetch, onStatsRefresh]);
+
   const FILTERS = ["pending", "approved", "rejected", "all"];
 
   return (
     <div>
-      {/* Toast */}
-      <div
-        style={{
-          position: "fixed",
-          top: 20,
-          right: 20,
-          zIndex: 9999,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
-        {toasts.map(t => (
-          <div
-            key={t.id}
-            onClick={() => removeToast(t.id)}
-            style={{
-              padding: "11px 18px",
-              borderRadius: 10,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              background:
-                t.type === "success"
-                  ? "#052e16"
-                  : t.type === "error"
-                    ? "#450a0a"
-                    : "#0c1a2e",
-              color:
-                t.type === "success"
-                  ? "#4ade80"
-                  : t.type === "error"
-                    ? "#f87171"
-                    : "#60a5fa",
-              border: `1px solid ${t.type === "success" ? "rgba(74,222,128,.2)" : t.type === "error" ? "rgba(248,113,113,.2)" : "rgba(96,165,250,.2)"}`,
-            }}
-          >
-            {t.message}
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
 
       <SectionHeader
         title="Tool Submissions"
@@ -374,7 +714,7 @@ export function Submissions({
                   color: filter === f ? "white" : "#5b7083",
                   border: `1px solid ${filter === f ? "#1d6bf3" : "rgba(255,255,255,.07)"}`,
                   fontFamily: "inherit",
-                  textTransform: "capitalize",
+                  textTransform: "capitalize" as const,
                 }}
               >
                 {f}
@@ -398,12 +738,60 @@ export function Submissions({
               item={item}
               onApprove={setApproveTarget}
               onReject={setRejectTarget}
+              onEdit={setEditTarget}
+              onDelete={setDeleteTarget}
             />
           ))}
         </div>
       )}
 
-      {/* Approve Modal */}
+      {/* ── Edit Submission Modal ── */}
+      {editTarget && (
+        <EditSubmissionModal
+          item={editTarget}
+          open={!!editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => {
+            addToast("Submission updated", "success");
+            refetch();
+          }}
+        />
+      )}
+
+      {/* ── Delete Confirm ── */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="🗑️ Delete Submission"
+        width={380}
+      >
+        <p
+          style={{
+            fontSize: 13,
+            color: "#5b7083",
+            marginBottom: 20,
+            lineHeight: 1.5,
+          }}
+        >
+          Permanently delete the submission for{" "}
+          <strong style={{ color: "#e2e8f0" }}>{deleteTarget?.name}</strong>?
+          This cannot be undone.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            loading={actionLoading}
+            onClick={handleDelete}
+          >
+            Delete
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── Approve Modal ── */}
       <Modal
         open={!!approveTarget}
         onClose={() => {
@@ -416,10 +804,9 @@ export function Submissions({
         <p style={{ fontSize: 13, color: "#5b7083", marginBottom: 20 }}>
           {approveTarget?.name} · {approveTarget?.website}
         </p>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <Input
-            label="Tool Slug (URL-safe, auto-generated if empty)"
+            label="Tool Slug (auto-generated if empty)"
             value={slug}
             onChange={setSlug}
             placeholder={
@@ -427,7 +814,6 @@ export function Submissions({
               "tool-slug"
             }
           />
-
           <div>
             <label
               style={{
@@ -445,7 +831,7 @@ export function Submissions({
             <textarea
               value={adminNote}
               onChange={e => setAdminNote(e.target.value)}
-              placeholder="Looks great! Quality tool."
+              placeholder="Looks great!"
               rows={3}
               style={{
                 width: "100%",
@@ -462,7 +848,6 @@ export function Submissions({
               }}
             />
           </div>
-
           <div
             style={{
               display: "flex",
@@ -492,7 +877,7 @@ export function Submissions({
         </div>
       </Modal>
 
-      {/* Reject Modal */}
+      {/* ── Reject Modal ── */}
       <Modal
         open={!!rejectTarget}
         onClose={() => {
@@ -504,7 +889,6 @@ export function Submissions({
         <p style={{ fontSize: 13, color: "#5b7083", marginBottom: 20 }}>
           {rejectTarget?.name}
         </p>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <label
@@ -540,7 +924,6 @@ export function Submissions({
               }}
             />
           </div>
-
           <div
             style={{
               display: "flex",

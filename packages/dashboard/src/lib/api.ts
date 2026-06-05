@@ -15,28 +15,41 @@ export class ApiError extends Error {
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers ?? {}),
-    },
+    headers: { "Content-Type": "application/json", ...(opts.headers ?? {}) },
     ...opts,
   });
-
   const json = await res
     .json()
     .catch(() => ({ message: `HTTP ${res.status}` }));
-
-  if (!res.ok) {
+  if (!res.ok)
     throw new ApiError(
       res.status,
       json.message ?? `Request failed: ${res.status}`
     );
-  }
-
   return json.data as T;
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+async function requestForm<T>(
+  path: string,
+  body: FormData,
+  method = "POST"
+): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    method,
+    body,
+  });
+  const json = await res
+    .json()
+    .catch(() => ({ message: `HTTP ${res.status}` }));
+  if (!res.ok)
+    throw new ApiError(
+      res.status,
+      json.message ?? `Request failed: ${res.status}`
+    );
+  return json.data as T;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -52,15 +65,13 @@ export interface AuthUser {
 export const authApi = {
   getMe: () => request<AuthUser>("/auth/me"),
   logout: () => request<null>("/auth/logout", { method: "POST" }),
-  // Google login - sends Firebase idToken
-  googleLogin: (idToken: string) =>
-    request<{ user: AuthUser; accessToken: string; isNewUser: boolean }>(
-      "/auth/google",
-      { method: "POST", body: JSON.stringify({ idToken }) }
-    ),
+  login: (email: string, password: string) =>
+    request<{ user: AuthUser; accessToken: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
 };
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
 export interface PlatformStats {
   totalUsers: number;
   totalTools: number;
@@ -68,17 +79,16 @@ export interface PlatformStats {
   pendingSubmissions: number;
   roleBreakdown: Record<string, number>;
 }
-
 export const statsApi = {
   get: () => request<PlatformStats>("/users/admin/stats"),
 };
 
-// ─── Tools ────────────────────────────────────────────────────────────────────
 export interface Tool {
   _id: string;
   slug: string;
   name: string;
   shortDescription: string;
+  fullDescription?: string;
   toolType: string;
   pricingType: string;
   ratingOverall?: number;
@@ -88,9 +98,16 @@ export interface Tool {
   verificationStatus: string;
   logoUrl?: string;
   websiteUrl?: string;
+  apiDocsUrl?: string;
+  githubUrl?: string;
+  paperUrl?: string;
   providerId?: { name: string; slug: string; logoUrl?: string };
   hasApi: boolean;
   isOpenSource: boolean;
+  hasFreeTier: boolean;
+  contextWindowTokens?: number;
+  maxOutputTokens?: number;
+  modelFamily?: string;
   createdAt: string;
 }
 
@@ -99,6 +116,30 @@ export interface PaginatedResult<T> {
   meta: { page: number; limit: number; total: number; totalPages: number };
 }
 
+export const TOOL_TYPE_OPTIONS = [
+  { value: "llm_model", label: "LLM / Language Model" },
+  { value: "chat_product", label: "Chat Product" },
+  { value: "search_product", label: "AI Search" },
+  { value: "coding_tool", label: "Coding Tool" },
+  { value: "image_model", label: "Image Generation" },
+  { value: "video_model", label: "Video Generation" },
+  { value: "audio_model", label: "Audio & Music" },
+  { value: "embedding_model", label: "Embedding Model" },
+  { value: "agent_framework", label: "AI Agent / Framework" },
+  { value: "multimodal_tool", label: "Multimodal Tool" },
+  { value: "open_source_model", label: "Open Source Model" },
+];
+
+export const PRICING_TYPE_OPTIONS = [
+  { value: "free", label: "Free" },
+  { value: "open_source_free", label: "Open Source (Free)" },
+  { value: "freemium", label: "Freemium" },
+  { value: "subscription", label: "Subscription" },
+  { value: "pay_per_token", label: "Pay per Token" },
+  { value: "pay_per_use", label: "Pay per Use" },
+  { value: "enterprise", label: "Enterprise" },
+];
+
 export const toolsApi = {
   getAll: (params: Record<string, string | number>) => {
     const qs = new URLSearchParams(
@@ -106,6 +147,25 @@ export const toolsApi = {
     ).toString();
     return request<PaginatedResult<Tool>>(`/tools?${qs}`);
   },
+  getBySlug: (slug: string) => request<Tool>(`/tools/${slug}`),
+  // Direct JSON creation (no logo) — admin only, POST /tools
+  createJson: (data: Record<string, any>) =>
+    request<Tool>("/tools", { method: "POST", body: JSON.stringify(data) }),
+  // Creation with logo → multipart POST /tools/submit (authenticated user submission route)
+  // returns { id } of the ToolSubmission, then we immediately auto-approve it
+  createWithLogo: (data: Record<string, any>, logoFile: File) => {
+    const form = new FormData();
+    Object.entries(data).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") form.append(k, String(v));
+    });
+    form.append("logo", logoFile);
+    return requestForm<{ id: string }>("/tools/submit", form, "POST");
+  },
+  update: (slug: string, data: Partial<Tool>) =>
+    request<Tool>(`/tools/${slug}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
   delete: (slug: string) =>
     request<null>(`/tools/${slug}`, { method: "DELETE" }),
   toggleFeatured: (slug: string, isFeatured: boolean) =>
@@ -115,7 +175,6 @@ export const toolsApi = {
     }),
 };
 
-// ─── Users ────────────────────────────────────────────────────────────────────
 export interface AdminUser {
   _id: string;
   email: string;
@@ -145,7 +204,6 @@ export const usersApi = {
     request<null>(`/users/admin/${userId}`, { method: "DELETE" }),
 };
 
-// ─── Reviews ──────────────────────────────────────────────────────────────────
 export interface Review {
   _id: string;
   toolId: { _id: string; name: string; slug: string; logoUrl?: string } | null;
@@ -179,7 +237,6 @@ export const reviewsApi = {
     request<Review>(`/reviews/${id}/unhide`, { method: "POST" }),
 };
 
-// ─── Submissions ──────────────────────────────────────────────────────────────
 export interface Submission {
   _id: string;
   name: string;
@@ -227,9 +284,18 @@ export const submissionsApi = {
       method: "POST",
       body: JSON.stringify({ action: "reject", adminNote }),
     }),
+  update: (
+    id: string,
+    data: Partial<Omit<Submission, "_id" | "status" | "createdAt">>
+  ) =>
+    request<Submission>(`/users/admin/submissions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<null>(`/users/admin/submissions/${id}`, { method: "DELETE" }),
 };
 
-// ─── Categories ───────────────────────────────────────────────────────────────
 export interface Category {
   id: string;
   slug: string;
@@ -239,7 +305,6 @@ export interface Category {
   icon: string;
   count: number;
 }
-
 export const categoriesApi = {
   getAll: () => request<Category[]>("/categories"),
 };

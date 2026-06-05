@@ -34,7 +34,7 @@ const UserSchema = new Schema<IUser>(
       index: true,
     },
     username: { type: String, required: true, unique: true, index: true },
-    password: { type: String },
+    password: { type: String, select: false }, // never returned by default
     displayName: { type: String },
     avatarUrl: { type: String },
     bio: { type: String },
@@ -43,6 +43,8 @@ const UserSchema = new Schema<IUser>(
       enum: ["user", "owner", "admin"],
       default: "user",
     },
+    emailVerified: { type: Boolean, default: false },
+
     // Google OAuth
     googleId: { type: String, unique: true, sparse: true },
 
@@ -50,7 +52,7 @@ const UserSchema = new Schema<IUser>(
     reviewCount: { type: Number, default: 0 },
     helpfulVoteCount: { type: Number, default: 0 },
     isApiUser: { type: Boolean, default: false },
-    refreshTokenHash: { type: String },
+    refreshTokenHash: { type: String, select: false },
   },
   {
     timestamps: true,
@@ -59,11 +61,7 @@ const UserSchema = new Schema<IUser>(
 
 UserSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
-
-  if (!this.password) {
-    throw new Error("Password is required");
-  }
-
+  if (!this.password) throw new Error("Password is required");
   this.password = await bcrypt.hash(this.password, 10);
 });
 

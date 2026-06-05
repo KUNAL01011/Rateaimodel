@@ -23,18 +23,25 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
 
   const refresh = useCallback(async () => {
     try {
       const me = await authApi.getMe();
-      setUser(me);
+      setUserState(me);
       setStatus("authenticated");
     } catch {
-      setUser(null);
+      setUserState(null);
       setStatus("unauthenticated");
     }
+  }, []);
+
+  // Exposed setter — lets LoginPage update user after a successful login()
+  // without a redundant /auth/me round-trip
+  const setUser = useCallback((u: AuthUser | null) => {
+    setUserState(u);
+    setStatus(u ? "authenticated" : "unauthenticated");
   }, []);
 
   useEffect(() => {
@@ -45,9 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
     } catch {
-      // ignore
+      // ignore network errors on logout
     } finally {
-      setUser(null);
+      setUserState(null);
       setStatus("unauthenticated");
     }
   }, []);
