@@ -1,6 +1,6 @@
 // ─── API Client ──────────────────────────────────────────────────────────────
 
-const BASE = "http://localhost:8080/api/v1";
+const BASE = import.meta.env.VITE_API_URL;
 
 export class ApiError extends Error {
   status: number;
