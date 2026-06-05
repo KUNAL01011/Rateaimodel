@@ -1,4 +1,4 @@
-import { statsApi, type PlatformStats } from "../lib/api";
+import { statsApi } from "../lib/api";
 import { useAsync } from "../hooks";
 import { PageLoader, ErrorBanner } from "./ui";
 

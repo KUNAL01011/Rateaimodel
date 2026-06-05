@@ -19,9 +19,7 @@ import {
   Td,
   Pagination,
   Input,
-  Modal,
   ToastContainer,
-  Spinner,
 } from "./ui";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
