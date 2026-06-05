@@ -16,7 +16,6 @@ export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
     new ApiResponse(
       200,
       {
-        accessToken: tokens.accessToken,
         user: {
           id: user._id,
           email: user.email,
@@ -121,7 +120,6 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     new ApiResponse(
       200,
       {
-        accessToken,
         user: {
           id: user._id,
           email: user.email,

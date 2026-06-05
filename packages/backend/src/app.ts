@@ -6,13 +6,40 @@ import cookieParser from "cookie-parser";
 import { morganMiddleware } from "./utils";
 import { errorHandler, globalLimiter, notFoundHandler } from "./middlewares";
 import routes from "./routes";
+import { myEnvironment } from "./configs";
 
 const app: Application = express();
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https://res.cloudinary.com",
+          "https://ui-avatars.com",
+        ],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+      },
+    },
+    frameguard: { action: "deny" },
+    hsts: { maxAge: 31536000, includeSubDomains: true },
+  })
+);
+
+const allowedOrigins = (myEnvironment.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:5173", "https://rateaimodel-frontend.vercel.app", "https://rateaimodel-dashboard.vercel.app"],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,

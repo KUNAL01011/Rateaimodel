@@ -1,5 +1,5 @@
 import { Review, Tool } from "@/models";
-import { ApiError } from "@/utils";
+import { ApiError, escapeRegex } from "@/utils";
 
 export const toolService = {
   async getAll({
@@ -12,7 +12,6 @@ export const toolService = {
     open_source,
     sort = "newest",
     q,
-    sortOrder = "desc",
   }: {
     page?: number;
     limit?: number;
@@ -32,9 +31,10 @@ export const toolService = {
     if (open_source === "true") filter.isOpenSource = true;
     if (use_case) filter["useCaseCoverage.useCase"] = use_case;
     if (q) {
+      const safe = escapeRegex(q.trim());
       filter.$or = [
-        { name: { $regex: q, $options: "i" } },
-        { shortDescription: { $regex: q, $options: "i" } },
+        { name: { $regex: safe, $options: "i" } },
+        { shortDescription: { $regex: safe, $options: "i" } },
       ];
     }
 

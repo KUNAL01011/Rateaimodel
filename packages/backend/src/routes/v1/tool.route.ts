@@ -11,7 +11,13 @@ import {
   upsertBenchmark,
   createToolListingRequest,
 } from "@/controllers";
-import { authenticate, authorize, upload, validate } from "@/middlewares";
+import {
+  authenticate,
+  authorize,
+  submitLimiter,
+  upload,
+  validate,
+} from "@/middlewares";
 import {
   createToolSchema,
   updateToolSchema,
@@ -29,6 +35,7 @@ router.get("/trending", getTrendingTools);
 router.post(
   "/submit",
   authenticate,
+  submitLimiter,
   upload.single("logo"),
   createToolListingRequest
 );

@@ -33,14 +33,6 @@ export const deleteLocalFile = (filePath: string): void => {
   }
 };
 
-/**
- * Upload a file to Cloudinary.
- *
- * @param filePath - Absolute path OR a path relative to <cwd>/public/image.
- *   When called from createToolListingRequest, multer already gives us an
- *   absolute path (req.file.path), so we use it directly.
- * @param folder   - Cloudinary destination folder (default: "uploads")
- */
 export const uploadImage = async (
   filePath: string,
   folder?: string
@@ -64,7 +56,15 @@ export const uploadImage = async (
       fullPath = path.resolve(baseDir, filePath);
 
       // Path traversal guard
-      if (!fullPath.startsWith(baseDir + path.sep) && fullPath !== baseDir) {
+      const ALLOWED_UPLOAD_DIR = path.resolve(
+        process.cwd(),
+        "public",
+        "uploads"
+      );
+      if (
+        !fullPath.startsWith(ALLOWED_UPLOAD_DIR + path.sep) &&
+        fullPath !== baseDir
+      ) {
         throw new ApiError(
           400,
           `Security Error: Path traversal attempt detected for path: ${filePath}`

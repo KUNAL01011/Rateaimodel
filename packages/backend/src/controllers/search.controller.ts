@@ -1,11 +1,6 @@
-import { asyncHandler, ApiResponse } from "@/utils";
+import { asyncHandler, ApiResponse, escapeRegex } from "@/utils";
 import { Request, Response } from "express";
 import { Tool } from "@/models";
-
-// Escape special regex characters to prevent ReDoS
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export const search = asyncHandler(async (req: Request, res: Response) => {
   const { q, page = "1", limit = "20" } = req.query;
