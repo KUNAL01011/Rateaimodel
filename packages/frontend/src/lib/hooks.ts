@@ -661,6 +661,56 @@ export function useSearch(initialQuery = "") {
 // Categories
 // ─────────────────────────────────────────────────────────────────────────────
 
+export function useCategory(slug: string) {
+  const [state, dispatch] = useReducer(
+    createAsyncReducer<Category | null>(null),
+    {
+      data: null,
+      status: "idle",
+      error: null,
+    }
+  );
+
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    dispatch({ type: "LOADING" });
+    categoriesApi
+      .getBySlug(slug)
+      .then(c => {
+        if (!cancelled) {
+          const mapped: Category = {
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            description: c.description,
+            icon: c.icon,
+            count: c.count,
+            featured: [],
+          };
+          dispatch({ type: "SUCCESS", payload: mapped });
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled)
+          dispatch({
+            type: "ERROR",
+            payload: err?.message ?? "Failed to load category",
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  return {
+    category: state.data,
+    loading: state.status === "loading",
+    error: state.error,
+    status: state.status,
+  };
+}
+
 export function useCategories() {
   const [state, dispatch] = useReducer(createAsyncReducer<Category[]>([]), {
     data: [],

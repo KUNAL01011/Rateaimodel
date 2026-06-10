@@ -1,4 +1,5 @@
 import { RecommendationCache, Tool } from "@/models";
+import { logger } from "@/utils";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import crypto from "crypto";
 
@@ -257,7 +258,9 @@ export const recommendationService = {
       intentJson: JSON.stringify(intent),
       resultsJson: JSON.stringify(scored),
       expiresAt,
-    }).catch(() => {}); // cache write failure is non-fatal
+    }).catch(err => {
+      logger.warn("Recommendation cache write failed:", err.message);
+    }); // cache write failure is non-fatal
 
     return { intent, recommendations: scored, cached: false };
   },

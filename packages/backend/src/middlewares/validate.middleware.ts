@@ -1,8 +1,17 @@
 import { Request, Response, NextFunction } from "express";
 import { type ZodType, ZodError } from "zod";
 import { ApiError } from "@/utils";
+import { isValidObjectId } from "mongoose";
 
 type ValidationTarget = "body" | "query" | "params";
+
+export const validateId =
+  (param = "id") =>
+  (req: Request, _res: Response, next: NextFunction) => {
+    if (!isValidObjectId(req.params[param]))
+      return next(new ApiError(400, `Invalid ${param} format`));
+    next();
+  };
 
 export const validate =
   (schema: ZodType, target: ValidationTarget = "body") =>

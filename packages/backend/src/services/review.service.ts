@@ -102,7 +102,10 @@ export const reviewService = {
 
     // Decrement user review count
     await import("@/models").then(({ User }) =>
-      User.findByIdAndUpdate(review.userId, { $inc: { reviewCount: -1 } })
+      User.findByIdAndUpdate(review.userId, {
+        $inc: { reviewCount: -1 },
+        $max: { reviewCount: 0 },
+      })
     );
 
     await toolService.refreshAggregateScores(String(review.toolId));

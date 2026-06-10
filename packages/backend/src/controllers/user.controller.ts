@@ -49,7 +49,15 @@ export const updateProfile = asyncHandler(
 export const deleteAccount = asyncHandler(
   async (req: Request, res: Response) => {
     await userService.deleteAccount(req.userId!);
-    res.clearCookie("accessToken");
+    const cookieOpts = {
+      path: "/",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as
+        | "none"
+        | "lax",
+    };
+    res.clearCookie("accessToken", cookieOpts);
     return res.status(200).json(new ApiResponse(200, null, "Account deleted"));
   }
 );
@@ -332,26 +340,35 @@ export const deleteSubmission = asyncHandler(
       .json(new ApiResponse(200, null, "Submission deleted"));
   }
 );
- 
+
 export const updateSubmission = asyncHandler(
   async (req: Request, res: Response) => {
     const submission = await ToolSubmission.findById(req.params.id);
     if (!submission) throw new ApiError(404, "Submission not found");
     if (submission.status !== "pending")
       throw new ApiError(400, "Cannot edit a reviewed submission");
- 
+
     const allowed = [
-      "name","website","tagline","description","toolType",
-      "pricing","pricingDetails","modalities","hasApi","isOpenSource",
-      "ownerName","ownerEmail",
+      "name",
+      "website",
+      "tagline",
+      "description",
+      "toolType",
+      "pricing",
+      "pricingDetails",
+      "modalities",
+      "hasApi",
+      "isOpenSource",
+      "ownerName",
+      "ownerEmail",
     ] as const;
- 
-    allowed.forEach((field) => {
+
+    allowed.forEach(field => {
       if (req.body[field] !== undefined) {
         (submission as any)[field] = req.body[field];
       }
     });
- 
+
     await submission.save();
     return res
       .status(200)

@@ -94,7 +94,7 @@ export const categories = asyncHandler(async (_req: Request, res: Response) => {
       icon: meta.icon,
       count: countMap[type] ?? 0,
     };
-  }).filter(c => c.count > 0);
+  }).filter(c => true); // Show all categories even if count is 0
 
   return res
     .status(200)

@@ -1,7 +1,6 @@
 "use client";
-import { use } from "react";
-import { useTools } from "@/lib/hooks";
-import { MOCK_CATEGORIES } from "@/lib/mockData";
+import { use, useMemo } from "react";
+import { useTools, useCategory } from "@/lib/hooks";
 import ToolCard from "@/components/tools/ToolCard";
 import Link from "next/link";
 import { ArrowLeft, SlidersHorizontal } from "lucide-react";
@@ -12,17 +11,17 @@ export default function CategoryPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const { tools, loading } = useTools();
-  const category = MOCK_CATEGORIES.find(c => c.slug === slug);
 
-  const filtered = tools.filter(
-    t =>
-      t.category
-        .toLowerCase()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "") === slug ||
-      t.category.toLowerCase() === (category?.name.toLowerCase() ?? "")
-  );
+  // The slug format from backend is "llm-model", we pass toolType="llm_model"
+  const backendToolType = useMemo(() => slug.replace(/-/g, "_"), [slug]);
+
+  const { category, loading: categoryLoading } = useCategory(slug);
+  const { tools, loading: toolsLoading } = useTools({
+    toolType: backendToolType,
+  });
+
+  const loading = categoryLoading || toolsLoading;
+  const filtered = tools;
 
   return (
     <div className="min-h-screen">
