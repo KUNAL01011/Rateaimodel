@@ -1,6 +1,6 @@
 import { asyncHandler, ApiResponse, escapeRegex } from "@/utils";
 import { Request, Response } from "express";
-import { Tool } from "@/models";
+import { Tool, Provider } from "@/models";
 
 export const search = asyncHandler(async (req: Request, res: Response) => {
   const { q, page = "1", limit = "20" } = req.query;
@@ -27,16 +27,30 @@ export const search = asyncHandler(async (req: Request, res: Response) => {
   );
   const skip = (pageNum - 1) * limitNum;
 
-  // Escape user input before using in regex to prevent ReDoS
-  const safeQuery = escapeRegex(query);
+  // Flexible query: "gpt 4" -> matches "gpt-4", "gpt4", etc.
+  const terms = query
+    .split(/[\s\-]+/)
+    .filter(Boolean)
+    .map(escapeRegex);
+  const flexibleRegex = terms.join(".*");
+
+  const matchingProviders = await Provider.find(
+    {
+      name: { $regex: flexibleRegex, $options: "i" },
+    },
+    "_id"
+  );
+  const providerIds = matchingProviders.map(p => p._id);
 
   const textFilter = {
     isDeprecated: false,
     $or: [
-      { name: { $regex: safeQuery, $options: "i" } },
-      { shortDescription: { $regex: safeQuery, $options: "i" } },
-      { fullDescription: { $regex: safeQuery, $options: "i" } },
-      { "useCaseCoverage.useCase": { $regex: safeQuery, $options: "i" } },
+      { name: { $regex: flexibleRegex, $options: "i" } },
+      { slug: { $regex: flexibleRegex, $options: "i" } },
+      { shortDescription: { $regex: flexibleRegex, $options: "i" } },
+      { fullDescription: { $regex: flexibleRegex, $options: "i" } },
+      { "useCaseCoverage.useCase": { $regex: flexibleRegex, $options: "i" } },
+      ...(providerIds.length > 0 ? [{ providerId: { $in: providerIds } }] : []),
     ],
   };
 

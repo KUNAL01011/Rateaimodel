@@ -956,7 +956,7 @@ export function useAIRecommendation() {
   const [reasoning, setReasoning] = useState("");
 
   const getRecommendations = useCallback(
-    async (prompt: string, filters?: object, limit = 4) => {
+    async (prompt: string, filters?: object, limit = 8) => {
       if (!prompt.trim()) return;
       dispatch({ type: "LOADING" });
       setReasoning("");

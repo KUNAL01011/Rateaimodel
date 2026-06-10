@@ -18,6 +18,9 @@ interface ExtractedIntent {
   requires_citation?: boolean;
   budget_sensitive?: boolean;
   primary_use_cases: string[];
+  pricing_preference?: string[];
+  open_source_preference?: boolean;
+  api_preference?: boolean;
 }
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -61,7 +64,22 @@ async function extractIntent(
             type: SchemaType.ARRAY,
             items: { type: SchemaType.STRING },
             description:
-              "array of use_case slugs from: coding_general, code_review, debugging, academic_research, citation_extraction, fact_checking, web_search, deep_research, copywriting, long_form_writing, creative_writing, summarization, translation, email_drafting, seo_content, image_generation, image_editing, image_analysis, text_to_speech, speech_to_text, data_analysis, document_processing, customer_support_bot, study_and_learning, brainstorming, legal_analysis, medical_information, financial_analysis, agentic_workflows",
+              "array of use_case slugs from: coding_general, code_review, debugging, academic_research, citation_extraction, fact_checking, web_search, deep_research, copywriting, long_form_writing, creative_writing, summarization, translation, email_drafting, seo_content, image_generation, image_editing, image_analysis, text_to_speech, speech_to_text, data_analysis, document_processing, customer_support_bot, study_and_learning, brainstorming, legal_analysis, medical_information, financial_analysis, agentic_workflows, app_building",
+          },
+          pricing_preference: {
+            type: SchemaType.ARRAY,
+            items: { type: SchemaType.STRING },
+            description:
+              "If user asks for a specific pricing, include from: free, freemium, open_source_free, subscription, pay_per_use. Leave empty if none specified.",
+          },
+          open_source_preference: {
+            type: SchemaType.BOOLEAN,
+            description:
+              "Set to true if user specifically asks for open source.",
+          },
+          api_preference: {
+            type: SchemaType.BOOLEAN,
+            description: "Set to true if user specifically asks for an API.",
           },
         },
         required: [
@@ -149,7 +167,7 @@ export const recommendationService = {
   async recommend(
     taskDescription: string,
     filters: RecommendFilters = {},
-    limit = 5
+    limit = 10
   ) {
     // Check cache (SHA256 of task + filters)
     const cacheKey = crypto
@@ -192,8 +210,18 @@ export const recommendationService = {
     if (intent.primary_use_cases?.length) {
       toolFilter["useCaseCoverage.useCase"] = { $in: intent.primary_use_cases };
     }
-    if (filters.requires_api) toolFilter.hasApi = true;
-    if (filters.open_source_only) toolFilter.isOpenSource = true;
+
+    // Merge explicit filters with AI extracted intents
+    const wantsApi = filters.requires_api || intent.api_preference;
+    const wantsOss = filters.open_source_only || intent.open_source_preference;
+
+    if (wantsApi) toolFilter.hasApi = true;
+    if (wantsOss) toolFilter.isOpenSource = true;
+
+    if (intent.pricing_preference && intent.pricing_preference.length > 0) {
+      toolFilter.pricingType = { $in: intent.pricing_preference };
+    }
+
     if (filters.toolType) toolFilter.toolType = filters.toolType;
 
     // Fetch candidates sorted by overall rating
