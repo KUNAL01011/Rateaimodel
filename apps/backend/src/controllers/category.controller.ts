@@ -94,7 +94,7 @@ export const categories = asyncHandler(async (_req: Request, res: Response) => {
       icon: meta.icon,
       count: countMap[type] ?? 0,
     };
-  }).filter(c => true); // Show all categories even if count is 0
+  }); // all categories, even when count is 0
 
   return res
     .status(200)
@@ -103,8 +103,8 @@ export const categories = asyncHandler(async (_req: Request, res: Response) => {
 
 export const categoryDetail = asyncHandler(
   async (req: Request, res: Response) => {
-    const { slug } = req.params;
-    const toolType = slug.replace(/-/g, "_");
+    const slug = String(req.params.slug ?? "");
+    const toolType = slug.replace(/-/g, "_") as (typeof TOOL_TYPES)[number];
 
     const meta = CATEGORY_META[toolType];
     const count = await Tool.countDocuments({ toolType, isDeprecated: false });
