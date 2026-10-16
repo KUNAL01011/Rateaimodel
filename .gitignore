@@ -50,3 +50,5 @@ coverage/
 .cache/
 .temp/
 *.map
+
+admin.md

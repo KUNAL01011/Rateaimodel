@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace=packages/backend\" \"npm run dev --workspace=packages/frontend\"",
-    "dev:backend": "npm run dev --workspace=packages/backend",
-    "dev:frontend": "npm run dev --workspace=packages/frontend",
-    "build": "npm run build --workspace=packages/frontend",
+    "dev": "concurrently \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
+    "dev:backend": "npm run dev --workspace=apps/backend",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "build": "npm run build --workspace=apps/frontend",
     "install:all": "npm install",
     "prepare": "husky || true"
   },
