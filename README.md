@@ -20,107 +20,97 @@
 
 ---
 
-## Overview
+## What is RateAI?
 
-**RateAI** is a full-stack review and recommendation platform for the AI-tools space —
-think *"a ratings institution for AI models,"* in the spirit of Wirecutter or G2 but built for
+**RateAI** is a full-stack review, recommendation and discovery platform for the AI-tools
+space — _a ratings institution for AI_, in the spirit of Wirecutter or G2 but built for
 LLMs, image/video/audio models, coding tools and autonomous agents.
 
 Unlike a flat directory, RateAI rates every tool across **five independent dimensions**
 (accuracy, speed, cost-value, ease-of-use and use-case fit) and lets people review a tool
-*for the specific job they hired it to do* — because a model that's great for coding can be
+_for the specific job they hired it to do_ — because a model that's great for coding can be
 mediocre for writing. A natural-language **AI matchmaker** then turns a plain-English task
-("free image generation with an API") into a ranked shortlist.
+("free image generation with an API") into a ranked, explainable shortlist.
 
-> **Naming note:** the brand is **RateAI**; the project ships on the domain **`rateaimodel.com`**.
+It's designed to grow into an ad-supported, SEO-driven content property: a comprehensive,
+well-structured, continuously-updated index that people and search engines trust.
 
-## Key Features
+> **Brand:** RateAI &nbsp;·&nbsp; **Domain:** `rateaimodel.com`
 
-- **Use-case-specific ratings** — tools scored per job across 5 dimensions, not one blunt star.
-- **AI matchmaking** — natural-language intent extraction (Google Gemini, structured outputs)
-  mapped to a scored, cached shortlist.
-- **Verified reviews** — Google OAuth + email verification gate every review; owner responses,
-  helpful-votes and moderation built in.
-- **Rich tool model** — pricing, context window, modalities, capability flags, benchmarks and
-  provider data, with a denormalized rating-aggregate pipeline.
-- **Full browse experience** — editorial directory with live filtering, a leaderboard, category
-  indexes and paginated listings.
-- **Admin dashboard** — a separate SPA for moderation, submissions review, and a **CSV bulk
-  importer** (upsert-by-slug) for curating the catalog at scale.
-- **Editorial design system** — a bespoke light, type-driven UI (serif display + mono data),
-  deliberately distinct from the generic "dark-mode + purple-gradient" AI look.
+## What it does
 
-## Tech Stack
+- **Use-case-specific ratings** — every tool scored per job across five dimensions, not one
+  blunt star, with denormalised rating aggregates refreshed by a background job.
+- **AI matchmaking** — natural-language intent extraction (Google Gemini, structured
+  outputs) mapped to a cached, scored shortlist with human-readable match reasons.
+- **Verified reviews** — Google OAuth + email verification gate every review; owner
+  responses, helpful-votes and moderation are built in.
+- **A real content catalogue** — a rich tool model covering pricing, context window,
+  modalities, capability flags, benchmarks and provider data, browsable through an
+  editorial directory, leaderboard, category indexes and an AI search.
+- **Admin CMS** — a separate dashboard where an admin curates the whole site: moderate
+  submissions, **bulk-import tools from CSV**, write and publish a **blog**, control
+  **site-wide SEO** per page (titles, descriptions, Open Graph, canonical, noindex) with
+  live Google/social previews, and manage branding and settings.
+- **SEO-first frontend** — dynamic metadata, a programmatic `sitemap.xml` and `robots.txt`,
+  per-page and per-post SEO overrides, and article structured data — all controllable from
+  the dashboard.
+- **A bespoke editorial design system** — a warm, light, type-driven interface
+  (serif display + mono data) deliberately distinct from the generic "dark-mode +
+  purple-gradient" AI look, applied consistently across the public site and the admin.
 
-| Layer | Technology |
-|---|---|
-| **Frontend** | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
-| **Admin** | React 19 + Vite SPA |
-| **Backend** | Node.js, Express 5, TypeScript |
-| **Database** | MongoDB with Mongoose 9 |
-| **AI** | Google Gemini 2.5 Flash (structured-output intent extraction) |
-| **Auth** | JWT (access + refresh), Firebase / Google OAuth, bcrypt |
-| **Infra / libs** | Cloudinary (media), Zod (validation), Helmet, rate limiting, Winston, Resend |
-| **Tooling** | npm workspaces (monorepo), tsdown, tsx, Husky, commitlint, Prettier |
+## Tech stack
+
+| Layer               | Technology                                                              |
+| ------------------- | ----------------------------------------------------------------------- |
+| **Frontend**        | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4           |
+| **Admin dashboard** | React 19 + Vite SPA                                                     |
+| **Backend**         | Node.js, Express 5, TypeScript                                          |
+| **Database**        | MongoDB with Mongoose 9                                                 |
+| **AI**              | Google Gemini 2.5 Flash (structured-output intent extraction)           |
+| **Auth**            | JWT (access + refresh), Firebase / Google OAuth, bcrypt                 |
+| **Media & SEO**     | Cloudinary (image uploads), dynamic sitemap/robots, Open Graph, JSON-LD |
+| **Libraries**       | Zod validation, Helmet, rate limiting, Winston, Resend, Marked          |
+| **Tooling**         | npm workspaces (monorepo), tsdown, tsx, Husky, commitlint, Prettier     |
 
 ## Architecture
 
-A TypeScript **monorepo** (npm workspaces) with three deployable apps:
+A TypeScript **monorepo** (npm workspaces) with three applications:
 
 ```
 rateaimodel/
 ├── apps/
-│   ├── backend/     # Express REST API  (/api/v1) — auth, tools, reviews,
-│   │                #   recommend, search, categories, users
-│   ├── frontend/    # Next.js public site (the review index)
-│   └── dashboard/   # Vite admin SPA (moderation + bulk import)
+│   ├── backend/     # Express REST API (/api/v1) — auth, tools, reviews, recommend,
+│   │                #   search, categories, users, blog, settings, uploads
+│   ├── frontend/    # Next.js public site — the review index, blog and SEO surface
+│   └── dashboard/   # Vite admin SPA — moderation, bulk import, blog & SEO CMS
 └── tools_data.json  # seed dataset
 ```
 
-**Backend layering:** `routes → controllers → services → models`, with Zod request
-validation, centralized error handling, and role-based access (`user` / `owner` / `admin`).
-The recommendation service extracts structured intent with an LLM, builds a MongoDB query,
-scores candidates by overall + per-use-case rating (with a log-scaled trust signal), and
-caches results by a SHA-256 of the query + filters.
+The backend follows a clean `routes → controllers → services → models` layering, with Zod
+request validation, centralized error handling and role-based access (`user` / `owner` /
+`admin`). The recommendation service extracts structured intent with an LLM, builds a
+MongoDB query, scores candidates by overall and per-use-case rating (with a log-scaled
+trust signal), and caches results by a hash of the query and filters.
 
-## Getting Started
+## Engineering highlights
 
-**Prerequisites:** Node 20+, a MongoDB connection string, and (optional) Gemini / Cloudinary / Firebase keys.
-
-```bash
-# 1. Install all workspaces
-npm install
-
-# 2. Configure environment
-cp .env.example .env        # fill in DATABASE_URL, GEMINI_API_KEY, etc.
-
-# 3. Seed the catalog (optional)
-npm run dev:backend         # then, in another shell:
-#   npx tsx apps/backend/src/seed.ts
-
-# 4. Run backend + frontend together
-npm run dev
-#   frontend → http://localhost:3000
-#   backend  → http://localhost:<API port>
-```
-
-Run the admin dashboard separately with `npm run dev --workspace=apps/dashboard`.
-
-## Engineering Highlights
-
-- Designed a **domain-rich data model** that separates underlying models from the products
-  built on them, with per-use-case score aggregates refreshed by a background job.
-- Built an **LLM recommendation pipeline** with structured outputs, a keyword fallback, and a
+- A **domain-rich data model** that separates underlying models from the products built on
+  them, with embedded benchmarks, pricing and per-use-case score aggregates.
+- An **LLM recommendation pipeline** with structured outputs, a keyword fallback and a
   cache layer — turning free-text tasks into ranked, explainable matches.
-- Implemented a safe **CSV bulk-import** endpoint (validate + upsert-by-slug, per-row error
-  reporting) sharing one mapper with the seed script so data never drifts.
-- Shipped a cohesive, accessible **editorial design system** (tokens, serif/sans/mono type
-  scale, flat hairline components) across ~11 pages, light and responsive.
+- A safe **CSV bulk-import** pipeline (validate + upsert-by-slug, per-row error reporting)
+  that shares one mapper with the seed script so catalogue data never drifts.
+- A **dashboard-driven CMS**: a Markdown blog with scheduling and Cloudinary image uploads,
+  and a per-page SEO workbench that feeds Next.js metadata, the sitemap and robots in real
+  time.
+- A cohesive, accessible **editorial design system** carried across the public site and the
+  admin dashboard.
 
 ## Author
 
-Built by **Kunal** · owned & operated by **Kunamix Digital Solutions**.
+Built by **Kunal** · owned &amp; operated by **Kunamix Digital Solutions**.
 
 ---
 
-<sub>This project is a personal/portfolio build. Not affiliated with the AI tools it indexes.</sub>
+<sub>Personal / portfolio project. Not affiliated with the AI tools it indexes.</sub>
