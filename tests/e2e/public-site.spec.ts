@@ -7,9 +7,13 @@ test.describe("Public site — core journeys", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText(
       /right AI/i
     );
-    // Primary nav
-    await expect(page.getByRole("link", { name: "Discover" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Blog" })).toBeVisible();
+    // Primary nav (names also appear in the footer, so take the first match)
+    await expect(
+      page.getByRole("link", { name: "Discover" }).first()
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Blog" }).first()
+    ).toBeVisible();
   });
 
   test("blog index renders", async ({ page }) => {
@@ -22,9 +26,7 @@ test.describe("Public site — core journeys", () => {
 
   test("search page is a browsable directory", async ({ page }) => {
     await page.goto("/search");
-    await expect(
-      page.getByPlaceholder(/Search AI tools/i)
-    ).toBeVisible();
+    await expect(page.getByPlaceholder(/Search AI tools/i)).toBeVisible();
   });
 
   test("nav links route correctly", async ({ page }) => {
