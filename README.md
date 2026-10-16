@@ -110,7 +110,3 @@ trust signal), and caches results by a hash of the query and filters.
 ## Author
 
 Built by **Kunal** · owned &amp; operated by **Kunamix Digital Solutions**.
-
----
-
-<sub>Personal / portfolio project. Not affiliated with the AI tools it indexes.</sub>
